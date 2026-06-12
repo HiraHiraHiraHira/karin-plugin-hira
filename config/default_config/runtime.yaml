@@ -1,0 +1,17 @@
+# 临时文件根目录。留空时使用 Karin 数据目录下的 hira/temp。
+tempRoot: ""
+
+# 是否启用临时文件自动清理
+cleanupEnabled: true
+
+# 临时文件最长保留时间，单位分钟
+cleanupMaxAgeMinutes: 120
+
+# ffmpeg 路径
+ffmpegPath: "ffmpeg"
+
+# ffprobe 路径
+ffprobePath: "ffprobe"
+
+# 下载超时时间，单位秒
+downloadTimeoutSeconds: 60

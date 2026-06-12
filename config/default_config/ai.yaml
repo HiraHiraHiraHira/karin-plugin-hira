@@ -1,0 +1,14 @@
+# AI 网页总结开关
+summaryEnabled: false
+
+# OpenAI 兼容 API 地址
+apiBaseUrl: "https://api.openai.com/v1"
+
+# API Key
+apiKey: ""
+
+# 总结模型
+model: "gpt-4.1-mini"
+
+# 发送给模型的网页正文最大长度
+maxInputChars: 12000

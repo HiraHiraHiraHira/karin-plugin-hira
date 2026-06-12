@@ -1,0 +1,11 @@
+# 翻译功能总开关
+enabled: true
+
+# DeepLX API，留空则跳过
+deeplxApi: ""
+
+# 腾讯交互翻译兼容接口
+tencentApi: "https://api.interpreter.caiyunai.com/v1/translator"
+
+# 请求超时时间，单位秒
+timeoutSeconds: 15

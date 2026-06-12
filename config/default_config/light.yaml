@@ -1,0 +1,21 @@
+# 轻量命令总开关
+enabled: true
+
+# 猫图 API，按顺序尝试
+catApis:
+  - "https://shibe.online/api/cats?count=1"
+  - "https://api.thecatapi.com/v1/images/search?limit=1"
+
+# 买家秀 API，按顺序尝试
+buyerShowApis:
+  - "https://api.vvhan.com/api/tao"
+
+# 累了 API，按顺序尝试
+tiredApis:
+  - "https://api.vvhan.com/api/wallpaper/views"
+
+# 医药查询 API
+medicineApi: "https://api.oioweb.cn/api/common/DrugSearch?keyword={keyword}"
+
+# 推荐软件 API
+softwareApi: "https://api.oioweb.cn/api/common/SoftwareSearch?keyword={keyword}"

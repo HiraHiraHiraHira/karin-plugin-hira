@@ -1,0 +1,62 @@
+{
+  "name": "karin-plugin-hira",
+  "version": "0.1.0",
+  "description": "Hira personal Karin helper plugin for music, supplemental media resolving, and future AI tools.",
+  "keywords": [
+    "karin-plugin",
+    "karin",
+    "music",
+    "resolver"
+  ],
+  "license": "MIT",
+  "author": "Hira",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "files": [
+    "config/",
+    "lib/",
+    "resources/",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "node --import tsx src/index.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "node-karin": "^1.16.1",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsdown": "^0.12.9",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "karin": {
+    "engines": ">=1.14.0",
+    "main": "src/index.ts",
+    "apps": [
+      "lib/apps"
+    ],
+    "ts-apps": [
+      "src/apps"
+    ],
+    "files": [
+      "config",
+      "data",
+      "resources"
+    ],
+    "web": "./lib/web.config.js",
+    "ts-web": "./src/web.config.ts"
+  },
+  "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+}

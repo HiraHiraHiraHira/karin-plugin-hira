@@ -1,0 +1,11 @@
+# Hira 总开关
+enabled: true
+
+# 帮助命令
+helpCommand: "#Hira帮助"
+
+# 普通命令回复前缀；多平台解析结果不会附加此前缀
+replyPrefix: "Hira"
+
+# 状态命令
+statusCommand: "#Hira状态"

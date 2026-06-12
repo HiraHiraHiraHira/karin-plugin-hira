@@ -1,0 +1,36 @@
+# 点歌功能总开关
+enabled: true
+
+# 默认音乐源: netease | qq | kuwo | kugou | bilibili
+defaultSource: qq
+
+# 普通 #点歌 是否默认返回列表
+listModeDefault: false
+
+# 搜索列表每页数量
+pageSize: 10
+
+# 搜索会话有效期，单位秒
+sessionTtlSeconds: 180
+
+# 是否尝试发送语音
+voiceEnabled: true
+
+# 是否优先请求高品质音源
+highQuality: false
+
+# 发送音频失败时是否回退到文本链接
+textFallback: true
+
+# Cookie
+cookies:
+  netease: ""
+  qq: ""
+  kuwo: ""
+  kugou: ""
+  bilibili: ""
+
+# 第三方音乐 API，可留空使用内置公开接口
+api:
+  neteaseBaseUrl: "http://music.163.com/api"
+  qqTempApi: "https://www.hhlqilongzhu.cn/api/dg_QQmusicflac.php?msg={keyword}&n={index}&type=json"
