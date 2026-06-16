@@ -31,6 +31,7 @@ export const defaultConfig: HiraConfig = {
   resolver: {
     enabled: true,
     kkkCompat: true,
+    commentsEnabled: true,
     priority: 900,
     maxVideoDurationSeconds: 480,
     bilibili: {

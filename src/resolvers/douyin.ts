@@ -81,9 +81,19 @@ const douyinQualityFromGear = (gearName: unknown): FixedDouyinQuality => {
   return '540p'
 }
 
-const firstPlayAddrVideoUrl = (value: unknown) => {
+const createDouyinPlayUrl = (uri: unknown, quality: DouyinQuality) => {
+  if (typeof uri !== 'string' || !uri.trim()) return undefined
+  const ratio = quality === 'adapt' ? '1080p' : quality
+  const url = new URL('https://aweme.snssdk.com/aweme/v1/play/')
+  url.searchParams.set('video_id', uri)
+  url.searchParams.set('ratio', ratio)
+  url.searchParams.set('line', '0')
+  return url.toString()
+}
+
+const firstPlayAddrVideoUrl = (value: unknown, quality: DouyinQuality) => {
   const playAddr = asObject(value)
-  return firstVideoUrl(playAddr?.url_list)
+  return firstVideoUrl(playAddr?.url_list) || createDouyinPlayUrl(playAddr?.uri, quality)
 }
 
 const selectDouyinBitRateUrl = (bitRates: unknown, quality: DouyinQuality) => {
@@ -115,7 +125,7 @@ const selectDouyinBitRateUrl = (bitRates: unknown, quality: DouyinQuality) => {
         const size = normalizeBytes(video.play_addr?.data_size)
         return size === 0 || size <= sizeLimitBytes
       })
-      const url = firstPlayAddrVideoUrl(item?.play_addr)
+      const url = firstPlayAddrVideoUrl(item?.play_addr, quality)
       if (url) return url
     }
 
@@ -126,7 +136,7 @@ const selectDouyinBitRateUrl = (bitRates: unknown, quality: DouyinQuality) => {
       if (itemSize === 0) return current
       return itemSize < currentSize ? item : current
     }, mp4Videos[0])
-    return firstPlayAddrVideoUrl(smallest.play_addr)
+    return firstPlayAddrVideoUrl(smallest.play_addr, quality)
   }
 
   const targetIndex = douyinQualityPriority.indexOf(quality)
@@ -139,18 +149,18 @@ const selectDouyinBitRateUrl = (bitRates: unknown, quality: DouyinQuality) => {
     : douyinQualityPriority
 
   for (const level of targetLevels) {
-    const url = firstPlayAddrVideoUrl(videosByQuality.get(level)?.[0]?.play_addr)
+    const url = firstPlayAddrVideoUrl(videosByQuality.get(level)?.[0]?.play_addr, quality)
     if (url) return url
   }
 
-  return firstPlayAddrVideoUrl(mp4Videos[0].play_addr)
+  return firstPlayAddrVideoUrl(mp4Videos[0].play_addr, quality)
 }
 
 const selectDouyinVideoUrl = (video: Record<string, any>, quality: DouyinQuality) => {
   return selectDouyinBitRateUrl(video.bit_rate, quality)
-    || firstPlayAddrVideoUrl(video.play_addr)
-    || firstPlayAddrVideoUrl(video.play_addr_h264)
-    || firstPlayAddrVideoUrl(video.download_addr)
+    || firstPlayAddrVideoUrl(video.play_addr, quality)
+    || firstPlayAddrVideoUrl(video.play_addr_h264, quality)
+    || firstPlayAddrVideoUrl(video.download_addr, quality)
 }
 
 const createDouyinDetailUrl = (awemeId: string) => {

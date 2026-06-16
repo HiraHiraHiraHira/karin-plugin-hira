@@ -29,7 +29,7 @@ describe('parseMusicCookieCommand', () => {
   })
 
   it('ignores invalid commands and unsupported sources', () => {
-    expect(parseMusicCookieCommand('#提交音乐ck 米哈游 abc')).toEqual({ type: 'none' })
+    expect(parseMusicCookieCommand('#提交音乐ck 未知来源 abc')).toEqual({ type: 'none' })
     expect(parseMusicCookieCommand('#点歌 周杰伦')).toEqual({ type: 'none' })
   })
 })

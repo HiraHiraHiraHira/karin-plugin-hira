@@ -1,9 +1,6 @@
 import { defineConfig } from 'node-karin'
 
-import { readAllConfig, saveAllConfig } from '@/config'
 import { Root } from '@/root'
-import { createWebConfigComponents } from '@/web/components'
-import { flattenConfig, mergeConfigPatch } from '@/web/configAdapter'
 
 export const webConfig = defineConfig({
   info: {
@@ -19,16 +16,10 @@ export const webConfig = defineConfig({
       name: 'Hira'
     }
   },
-  components: () => createWebConfigComponents(),
-  save: async (patch: Record<string, unknown>) => {
-    const current = readAllConfig()
-    const next = mergeConfigPatch(current, patch)
-    saveAllConfig(next)
-    return {
-      success: true,
-      message: 'Hira 配置已保存',
-      data: flattenConfig(next)
-    }
+  page: {
+    url: process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:5177/hira/karin-config' : '/hira/karin-config',
+    title: 'Hira 配置管理',
+    description: '使用 Hira 插件自带的配置管理页面'
   }
 })
 

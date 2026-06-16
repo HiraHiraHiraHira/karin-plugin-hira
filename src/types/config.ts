@@ -32,6 +32,7 @@ export type MusicConfig = {
 export type ResolverConfig = {
   enabled: boolean
   kkkCompat: boolean
+  commentsEnabled: boolean
   priority: number
   maxVideoDurationSeconds: number
   bilibili: {

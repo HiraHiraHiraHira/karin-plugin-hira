@@ -1,5 +1,6 @@
 import type { Message } from 'node-karin'
 
+import { isHiraAppEnabled } from '@/apps/runtime'
 import { Config, updateMusicCookie } from '@/config'
 import { maskCookie, parseMusicCookieCommand } from '@/music/cookieCommand'
 import { getMusicCookieStatusLines } from '@/music/cookieStatus'
@@ -73,6 +74,8 @@ export const replyMusicCookieStatus = async (e: Message) => {
 }
 
 export const handleMusicCookieMessage = async (e: Message, next?: () => unknown) => {
+  if (!isHiraAppEnabled()) return next?.()
+
   const command = parseMusicCookieCommand(e.msg)
   if (command.type === 'none') return next?.()
 

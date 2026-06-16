@@ -55,7 +55,7 @@ describe('buildXiaoheiheApiRequest', () => {
       x_app: 'heybox_website',
       x_os_type: 'Android'
     })
-    expect(request.params.hkey).toMatch(/^[A-Z0-9]{7}$/)
+    expect(request.params.hkey).toBe('V2V1Z67')
   })
 })
 
@@ -116,6 +116,75 @@ describe('normalizeXiaoheihePost', () => {
       'https://img.example.test/b.jpg?x=2\\',
       'https://img.example.test/c.jpg?x=3\\'
     ])
+  })
+
+  it('extracts rich ordered content blocks and comment blocks for follow-up sending', () => {
+    const result = normalizeXiaoheihePost('https://www.xiaoheihe.cn/app/bbs/link/abc123', {
+      status: 'ok',
+      result: {
+        link: {
+          title: '图文混排帖子',
+          description: '摘要',
+          thumb: 'https://img.example.test/thumb.jpg?x=0',
+          create_at: 1700000010,
+          ip_location: '上海',
+          user: {
+            username: 'Hira',
+            avatar: 'https://img.example.test/avatar.jpg?x=9'
+          },
+          hashtags: [{ name: 'Steam' }, { name: 'AI' }],
+          text: JSON.stringify([
+            { type: 'text', text: '开头文字' },
+            {
+              type: 'html',
+              text: '<p>正文 <a href="heybox%3A%2F%2F%7B%22protocol_type%22%3A%22openGameDetail%22%2C%22app_id%22%3A%22730%22%2C%22game_type%22%3A%22pc%22%7D">半条命</a></p><img data-original="https://img.example.test/a.jpg?x=1"/><iframe src="//player.example.test/video"></iframe>'
+            },
+            { type: 'img', url: 'https://img.example.test/b.jpg?x=2' }
+          ])
+        },
+        comments: [
+          {
+            comment: [
+              {
+                floor_num: 3,
+                create_at: 1700000000,
+                ip_location: '上海',
+                text: '<p>评论内容</p>',
+                user: { username: '路人' },
+                replyuser: { username: '作者' },
+                imgs: [{ url: 'https://img.example.test/c.jpg?x=3' }]
+              }
+            ]
+          }
+        ]
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful post result')
+    expect(result.extras?.contentBlocks).toEqual([
+      { type: 'text', text: '开头文字' },
+      { type: 'text', text: '正文 『半条命』 (https://www.xiaoheihe.cn/app/topic/game/pc/730)' },
+      { type: 'image', url: 'https://img.example.test/a.jpg?x=1\\' },
+      { type: 'text', text: '(https://player.example.test/video)' },
+      { type: 'image', url: 'https://img.example.test/b.jpg?x=2\\' }
+    ])
+    expect(result.extras?.commentBlocks).toEqual([
+      {
+        author: '路人',
+        replyTo: '作者',
+        floor: 3,
+        location: '上海',
+        time: '1700000000',
+        text: '评论内容',
+        images: ['https://img.example.test/c.jpg?x=3\\']
+      }
+    ])
+    expect(result.extras?.tags).toEqual(['Steam', 'AI'])
+    expect(result.extras?.coverUrl).toBe('https://img.example.test/thumb.jpg?x=0\\')
+    expect(result.extras?.authorAvatar).toBe('https://img.example.test/avatar.jpg?x=9\\')
+    expect(result.extras?.location).toBe('上海')
+    expect(result.extras?.createdAt).toBe('1700000010')
   })
 
   it('returns a failure for invalid API responses', () => {

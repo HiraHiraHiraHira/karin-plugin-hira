@@ -1,11 +1,14 @@
 import karin from 'node-karin'
 
+import { isHiraAppEnabled } from '@/apps/runtime'
 import { replyText } from '@/services/message'
 import { summarizeUrl } from '@/summary/service'
 
 const summaryReg = /^#?总结一下\s+(https?:\/\/[^\s"'<>]+)$/i
 
 export const summary = karin.command(summaryReg, async (e, next) => {
+  if (!isHiraAppEnabled()) return next?.()
+
   const match = e.msg.trim().match(summaryReg)
   if (!match?.[1]) return next?.()
 

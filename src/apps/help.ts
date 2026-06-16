@@ -1,10 +1,12 @@
 import karin from 'node-karin'
 import type { Message } from 'node-karin'
 
+import { Config } from '@/config'
+import { createConfiguredCommandRegExp, isHiraAppEnabled } from '@/apps/runtime'
 import { buildHelpCardHtml, logCardRenderFailure, renderCardImage } from '@/services/cardRender'
 import { replyPlainText } from '@/services/message'
 
-export const helpReg = /^#?(?:hira|hi)\s*帮助$/i
+export const helpReg = createConfiguredCommandRegExp(Config.app.helpCommand, ['hira\\s*帮助', 'hi\\s*帮助'])
 
 type ReplyPayload = Parameters<Message['reply']>[0]
 
@@ -66,7 +68,7 @@ export const helpFallbackText = () => [
     ...group.items.map(item => `${item.title} | ${item.description}`),
     ''
   ]),
-  '默认不包含 YouTube 和米哈游功能。'
+  '默认不包含未列出的第三方平台功能。'
 ].join('\n').trim()
 
 export const replyHelp = async (e: Message) => {
@@ -83,7 +85,8 @@ export const replyHelp = async (e: Message) => {
   }
 }
 
-export const help = karin.command(helpReg, async (e) => {
+export const help = karin.command(helpReg, async (e, next) => {
+  if (!isHiraAppEnabled()) return next?.()
   await replyHelp(e)
   return true
 }, {

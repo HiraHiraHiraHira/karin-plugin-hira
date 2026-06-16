@@ -4,7 +4,10 @@ import path from 'node:path'
 
 import type { ImageElement } from 'node-karin'
 import { karinPathHtml, logger, render as karinRender, segment } from 'node-karin'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
+import type { ResolvedPost } from '@/resolvers/types'
 import { Root } from '@/root'
 
 export type HelpCardItem = {
@@ -41,6 +44,29 @@ export type StatusCardOptions = {
   eyebrow?: string
   items: StatusCardItem[]
   footer?: string
+}
+
+export type TemplateHtmlOptions = {
+  hero: string
+  eyebrow: string
+  title: string
+  subtitle?: string
+  watermark?: string
+  body: string
+  footer?: string
+  width?: number
+}
+
+export type ErrorCardOptions = {
+  title: string
+  subtitle?: string
+  reason: string
+  suggestion?: string
+  details?: string[]
+}
+
+export type ResolverPreviewCardOptions = {
+  commentsEnabled?: boolean
 }
 
 type RenderOptions = {
@@ -470,6 +496,140 @@ body {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+.resolver-card {
+  display: grid;
+  gap: 18px;
+  margin-top: 28px;
+}
+.resolver-summary {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--hira-surface-strong);
+  border: 1px solid var(--hira-border);
+}
+.resolver-platform {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 13px;
+  line-height: 1.3;
+  font-weight: 900;
+}
+.resolver-title {
+  margin: 0;
+  color: var(--hira-fg);
+  font-size: 33px;
+  line-height: 1.18;
+  font-weight: 900;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.resolver-author,
+.resolver-desc,
+.resolver-url {
+  margin: 0;
+  color: var(--hira-muted);
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 600;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.resolver-desc {
+  color: rgba(19, 24, 34, 0.78);
+  white-space: pre-line;
+}
+.resolver-url {
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+.resolver-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.metric-card {
+  min-height: 92px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--hira-border);
+}
+.metric-label {
+  color: var(--hira-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+.metric-value {
+  margin-top: 8px;
+  color: var(--hira-fg);
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 31px;
+  line-height: 1;
+  font-weight: 900;
+}
+.error-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+.error-reason {
+  padding: 18px;
+  border-radius: 8px;
+  background: rgba(243, 18, 96, 0.08);
+  border: 1px solid rgba(243, 18, 96, 0.18);
+}
+.error-label {
+  color: #be123c;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 900;
+}
+.error-text {
+  margin: 9px 0 0;
+  color: #881337;
+  font-size: 19px;
+  line-height: 1.45;
+  font-weight: 800;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.error-suggestion {
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #92400e;
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+.error-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.error-detail-list li {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--hira-border);
+  color: var(--hira-muted);
+  font-family: Consolas, "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .render-footer {
   display: flex;
   justify-content: center;
@@ -487,48 +647,50 @@ ${body}
 </body>
 </html>`
 
-const renderDecor = () => `
-  <div class="dot-matrix" aria-hidden="true">
-    ${Array.from({ length: 16 }, () => '<span></span>').join('')}
-  </div>
-  <div class="corner-code" aria-hidden="true">SYS.32.91</div>
-  <div class="guide-watermark" aria-hidden="true">GUIDE</div>`
+const h = createElement
 
-const renderShell = ({
+const decorNodes = (watermark: string) => [
+  h('div', { key: 'dots', className: 'dot-matrix', 'aria-hidden': 'true' },
+    Array.from({ length: 16 }, (_, index) => h('span', { key: index }))
+  ),
+  h('div', { key: 'corner', className: 'corner-code', 'aria-hidden': 'true' }, 'SYS.32.91'),
+  h('div', { key: 'watermark', className: 'guide-watermark', 'aria-hidden': 'true' }, watermark)
+]
+
+export const renderTemplateHtml = ({
   eyebrow,
   hero,
   title,
   subtitle,
+  watermark = hero,
   body,
-  footer
-}: {
-  eyebrow: string
-  hero: string
-  title: string
-  subtitle?: string
-  body: string
-  footer?: string
-}) => `
-<main id="container">
-  <section class="hira-render-shell">
-    ${renderDecor()}
-    <div class="render-content">
-    <header class="render-header">
-      <div>
-        <div class="system-line"><span class="system-dot"></span>${escapeHtml(eyebrow)}</div>
-        <h1 class="hero-word">${escapeHtml(hero)}</h1>
-      </div>
-      <div class="module-meta">
-        <span class="header-label">CURRENT MODULE</span>
-        <div class="module-title">${escapeHtml(title)}</div>
-        ${subtitle ? `<div class="module-subtitle">${escapeHtml(subtitle)}</div>` : ''}
-      </div>
-    </header>
-      ${body}
-      ${footer ? `<footer class="render-footer">${escapeHtml(footer)}</footer>` : ''}
-    </div>
-  </section>
-</main>`
+  footer,
+  width = 920
+}: TemplateHtmlOptions) => createDocument(renderToStaticMarkup(
+  h('main', { id: 'container', 'data-template-engine': 'react-static' },
+    h('section', { className: 'hira-render-shell' },
+      ...decorNodes(watermark),
+      h('div', { className: 'render-content' },
+        h('header', { className: 'render-header' },
+          h('div', null,
+            h('div', { className: 'system-line' },
+              h('span', { className: 'system-dot' }),
+              eyebrow
+            ),
+            h('h1', { className: 'hero-word' }, hero)
+          ),
+          h('div', { className: 'module-meta' },
+            h('span', { className: 'header-label' }, 'CURRENT MODULE'),
+            h('div', { className: 'module-title' }, title),
+            subtitle ? h('div', { className: 'module-subtitle' }, subtitle) : null
+          )
+        ),
+        h('div', { dangerouslySetInnerHTML: { __html: body } }),
+        footer ? h('footer', { className: 'render-footer' }, footer) : null
+      )
+    )
+  )
+), width)
 
 const sectionColors = ['#2563eb', '#f31260', '#0d9488', '#7c3aed', '#d97706']
 
@@ -544,11 +706,12 @@ const renderCommandItems = (items: HelpCardItem[]) => `
     </article>`).join('')}
   </div>`
 
-export const buildHelpCardHtml = (groups: HelpCardGroup[]) => createDocument(renderShell({
+export const buildHelpCardHtml = (groups: HelpCardGroup[]) => renderTemplateHtml({
   eyebrow: 'SYSTEM_READY',
   hero: 'COMMANDS',
   title: '插件帮助',
   subtitle: '常用命令、点歌、多平台解析和轻量功能一览。',
+  watermark: 'GUIDE',
   footer: 'Generated by karin-plugin-hira',
   body: `
     <div class="section-list">
@@ -566,13 +729,14 @@ export const buildHelpCardHtml = (groups: HelpCardGroup[]) => createDocument(ren
         </div>`).join('')}
       </section>`).join('')}
     </div>`
-}))
+})
 
-export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number) => createDocument(renderShell({
+export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number) => renderTemplateHtml({
   eyebrow: 'SEARCH.RESULTS',
   hero: 'MUSIC',
   title: '点歌列表',
   subtitle: `第 ${page} 页，发送序号点歌，发送 #下一页 查看更多。`,
+  watermark: 'PICK',
   footer: 'Send a number to choose a track',
   body: `
       <div class="music-list">
@@ -587,7 +751,7 @@ export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number)
         </article>`).join('')}
       </div>
       <p class="card-tip">发送序号点歌，也可以发送 #下一页 翻页。</p>`
-}))
+})
 
 const statusText = (status: StatusCardItem['status']) => ({
   ok: 'ON',
@@ -596,11 +760,12 @@ const statusText = (status: StatusCardItem['status']) => ({
   info: 'INFO'
 })[status || 'info']
 
-export const buildStatusCardHtml = (options: StatusCardOptions) => createDocument(renderShell({
+export const buildStatusCardHtml = (options: StatusCardOptions) => renderTemplateHtml({
   eyebrow: options.eyebrow || 'SYSTEM.STATUS',
   hero: 'STATUS',
   title: options.title,
   subtitle: options.subtitle,
+  watermark: 'STATE',
   footer: options.footer || 'Generated by karin-plugin-hira',
   body: `
     <div class="status-grid">
@@ -617,7 +782,309 @@ export const buildStatusCardHtml = (options: StatusCardOptions) => createDocumen
         </article>`
       }).join('')}
     </div>`
-}))
+})
+
+const mediaCount = (items: unknown[] | undefined) => Array.isArray(items) ? items.length : 0
+
+const metricCard = (label: string, value: string | number) => `
+  <article class="metric-card">
+    <div class="metric-label">${escapeHtml(label)}</div>
+    <div class="metric-value">${escapeHtml(value)}</div>
+  </article>`
+
+const xiaoheiheCountText = (value: number, unit: string) => value > 0 ? `${value} ${unit}` : ''
+
+const stripResolverCommentSections = (value: string) => (
+  value
+    .replace(/\n\n热门(?:评论|回复)\n[\s\S]*$/u, '')
+    .trim()
+)
+
+const xiaoheihePreviewDocument = (body: string, width = 920) => `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=${width}, initial-scale=1">
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  width: ${width}px;
+  background: transparent;
+  color: #18181b;
+  font-family: HarmonyOSHans-Regular, "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+}
+#container {
+  width: ${width}px;
+  padding: 8px;
+}
+.xhh-preview-shell {
+  width: 100%;
+  min-height: 360px;
+  padding: 20px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgba(24, 24, 27, 0.08);
+  box-shadow: none;
+  overflow: hidden;
+}
+.xhh-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.xhh-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #52525b;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 850;
+}
+.xhh-brand-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #22c55e;
+}
+.xhh-source {
+  color: #a1a1aa;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+.xhh-main {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.xhh-main-no-cover {
+  display: block;
+}
+.xhh-cover {
+  width: 168px;
+  height: 168px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f4f4f5;
+}
+.xhh-title {
+  margin: 0;
+  color: #18181b;
+  font-size: 30px;
+  line-height: 1.22;
+  font-weight: 900;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+.xhh-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 13px;
+}
+.xhh-avatar,
+.xhh-avatar-fallback {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+}
+.xhh-avatar {
+  object-fit: cover;
+  background: #f4f4f5;
+}
+.xhh-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #d9f99d, #22c55e);
+  color: #14532d;
+  font-size: 14px;
+  font-weight: 900;
+}
+.xhh-author-name {
+  color: #27272a;
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 850;
+}
+.xhh-author-meta {
+  margin-top: 2px;
+  color: #71717a;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+.xhh-desc {
+  margin: 16px 0 0;
+  color: #3f3f46;
+  font-size: 16px;
+  line-height: 1.68;
+  font-weight: 520;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.xhh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 15px;
+}
+.xhh-chip {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #52525b;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+.xhh-divider {
+  height: 1px;
+  margin: 20px 0 14px;
+  background: #e4e4e7;
+}
+.xhh-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.xhh-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: #71717a;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+.xhh-mark {
+  color: #d4d4d8;
+  font-size: 11px;
+  line-height: 1.35;
+  font-weight: 850;
+}
+</style>
+</head>
+<body>
+${body}
+</body>
+</html>`
+
+export const buildResolverPreviewCardHtml = (post: ResolvedPost, defaultDescription?: string, options: ResolverPreviewCardOptions = {}) => {
+  const extras = post.extras || {}
+  const commentsEnabled = options.commentsEnabled ?? true
+  const cover = extras.coverUrl || post.images[0]
+  const tags = (extras.tags || []).slice(0, 4)
+  const title = compactText(post.title || post.displayName, 58)
+  const rawDescription = commentsEnabled ? post.description : stripResolverCommentSections(post.description || '')
+  const description = compactText(rawDescription || defaultDescription || `已识别${post.displayName}分享，完整内容将随后发送。`, 150)
+  const author = post.author || post.displayName
+  const avatarText = compactText(author, 1)
+  const meta = [extras.location, extras.createdAt ? String(extras.createdAt) : undefined].filter(Boolean).join(' · ')
+  const stats = [
+    xiaoheiheCountText(mediaCount(post.images), '张图片'),
+    xiaoheiheCountText(mediaCount(post.videos), '个视频'),
+    commentsEnabled ? xiaoheiheCountText(mediaCount(extras.commentBlocks), '条评论') : ''
+  ].filter(Boolean)
+
+  return xiaoheihePreviewDocument(`
+    <main id="container">
+      <article class="xhh-preview-shell">
+        <header class="xhh-topbar">
+          <div class="xhh-brand"><span class="xhh-brand-dot"></span>${escapeHtml(post.displayName)}</div>
+          <div class="xhh-source">Hira Resolver</div>
+        </header>
+        <section class="${cover ? 'xhh-main' : 'xhh-main-no-cover'}">
+          ${cover ? `<img class="xhh-cover" src="${escapeHtml(cover)}" alt="">` : ''}
+          <div class="xhh-content">
+            <h1 class="xhh-title">${escapeHtml(title)}</h1>
+            <div class="xhh-author">
+              ${extras.authorAvatar
+                ? `<img class="xhh-avatar" src="${escapeHtml(extras.authorAvatar)}" alt="">`
+                : `<div class="xhh-avatar-fallback">${escapeHtml(avatarText)}</div>`}
+              <div>
+                <div class="xhh-author-name">${escapeHtml(author)}</div>
+                ${meta ? `<div class="xhh-author-meta">${escapeHtml(meta)}</div>` : ''}
+              </div>
+            </div>
+            <p class="xhh-desc">${escapeHtml(description)}</p>
+            ${tags.length > 0
+              ? `<div class="xhh-chips">${tags.map(tag => `<span class="xhh-chip">#${escapeHtml(tag)}</span>`).join('')}</div>`
+              : ''}
+          </div>
+        </section>
+        ${stats.length > 0 ? `
+        <div class="xhh-divider"></div>
+        <footer class="xhh-footer">
+          <div class="xhh-stats">${stats.map(item => `<span>${escapeHtml(item)}</span>`).join('')}</div>
+          <div class="xhh-mark">karin-plugin-hira</div>
+        </footer>` : ''}
+      </article>
+    </main>`)
+}
+
+export const buildXiaoheihePreviewCardHtml = (post: ResolvedPost, options?: ResolverPreviewCardOptions) => (
+  buildResolverPreviewCardHtml(post, '已识别小黑盒分享，完整内容将随后发送。', options)
+)
+
+export const buildXiaohongshuPreviewCardHtml = (post: ResolvedPost, options?: ResolverPreviewCardOptions) => (
+  buildResolverPreviewCardHtml(post, '已识别小红书笔记，完整图文将随后发送。', options)
+)
+
+export const buildResolverCardHtml = (post: ResolvedPost) => {
+  const title = post.title || `${post.displayName}解析结果`
+  const description = post.description ? compactText(post.description, 260) : '已识别分享链接，媒体内容将随卡片一并发送。'
+
+  return renderTemplateHtml({
+    eyebrow: 'RESOLVER.RESULT',
+    hero: 'RESOLVE',
+    title: '解析结果',
+    subtitle: post.displayName,
+    watermark: 'POST',
+    footer: 'Generated by karin-plugin-hira',
+    body: `
+      <section class="resolver-card">
+        <div class="resolver-summary">
+          <div class="resolver-platform">${escapeHtml(post.displayName)}</div>
+          <h2 class="resolver-title">${escapeHtml(compactText(title, 72))}</h2>
+          ${post.author ? `<p class="resolver-author">作者：${escapeHtml(post.author)}</p>` : ''}
+          <p class="resolver-desc">${escapeHtml(description)}</p>
+          ${post.pageUrl ? `<p class="resolver-url">${escapeHtml(post.pageUrl)}</p>` : ''}
+        </div>
+        <div class="resolver-metrics">
+          ${metricCard('平台', post.platform)}
+          ${metricCard('图片', mediaCount(post.images))}
+          ${metricCard('视频', mediaCount(post.videos))}
+        </div>
+      </section>`
+  })
+}
+
+export const buildErrorCardHtml = (options: ErrorCardOptions) => renderTemplateHtml({
+  eyebrow: 'SYSTEM.ERROR',
+  hero: 'ERROR',
+  title: '诊断卡片',
+  subtitle: options.subtitle || options.title,
+  watermark: 'FAIL',
+  footer: 'Generated by karin-plugin-hira',
+  body: `
+    <section class="error-panel">
+      <div class="error-reason">
+        <div class="error-label">${escapeHtml(options.title)}</div>
+        <p class="error-text">${escapeHtml(options.reason)}</p>
+      </div>
+      ${options.suggestion ? `<div class="error-suggestion">${escapeHtml(options.suggestion)}</div>` : ''}
+      ${(options.details || []).length > 0
+        ? `<ul class="error-detail-list">${(options.details || []).map(detail => `<li>${escapeHtml(detail)}</li>`).join('')}</ul>`
+        : ''}
+    </section>`
+})
 
 export const writeCardHtmlFile = (html: string, name: string) => {
   const safeName = name.replace(/[^\w.-]+/g, '_') || 'card'

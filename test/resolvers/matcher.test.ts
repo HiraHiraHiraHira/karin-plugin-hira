@@ -25,8 +25,7 @@ describe('matchResolver', () => {
     expect(matchResolver('https://xhslink.com/a/abc123')?.platform).toBe('xiaohongshu')
   })
 
-  it('returns undefined for unsupported or mihoyo domains', () => {
-    expect(matchResolver('https://www.miyoushe.com/ys/article/123')).toBeUndefined()
+  it('returns undefined for unsupported domains', () => {
     expect(matchResolver('https://youtu.be/abc')).toBeUndefined()
     expect(matchResolver('https://example.com/a')).toBeUndefined()
   })

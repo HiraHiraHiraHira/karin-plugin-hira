@@ -2,7 +2,7 @@
 
 Hira 自用的 Karin 插件，定位是补足 KKK 之外的日常功能：点歌、多平台解析、轻量查询、翻译和 AI 网页总结。后续可以继续扩展 AI 画图。
 
-米哈游/米游社功能不做；YouTube 也不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat: true` 时继续交给 KKK；关闭兼容模式后由 Hira 尝试解析。
+YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat: true` 时继续交给 KKK；关闭兼容模式后由 Hira 尝试解析。
 
 ## 功能
 
@@ -14,7 +14,7 @@ Hira 自用的 Karin 插件，定位是补足 KKK 之外的日常功能：点歌
 - 轻量命令：随机猫图、买家秀、累了、医药查询、推荐软件。
 - 翻译：`翻中/翻英/翻日/...`，优先 DeepLX，可配置备用接口。
 - AI 总结：`#总结一下 <链接>`，使用 OpenAI 兼容接口。
-- 帮助与配置：`#Hira帮助`、多选点歌列表、`#Hira状态` 和音乐 Cookie 状态优先返回 KKK 风格图片卡片；Karin WebUI 支持保存基础、点歌、多平台解析、运行时、轻量功能和 AI 配置。
+- 帮助与配置：`#Hira帮助`、多选点歌列表、`#Hira状态` 和音乐 Cookie 状态优先返回 KKK 风格图片卡片；Karin WebUI 使用自带配置页管理基础、点歌、多平台解析、运行时、轻量功能和 AI 配置。
 - 运行时工具：临时文件清理、下载超时、ffmpeg/ffprobe 路径和语音转码配置。
 
 ## 命令
@@ -54,7 +54,7 @@ Hira 自用的 Karin 插件，定位是补足 KKK 之外的日常功能：点歌
 - `translate.yaml`：翻译接口。
 - `ai.yaml`：OpenAI 兼容接口、模型和网页总结开关。
 
-WebUI 配置面板会默认展开所有主要分组，并使用分割面板展示基础、点歌、多平台解析、运行时、轻量功能和 AI 配置。B站和抖音下载上限按分钟填写；配置文件中仍保存为秒。`0` 表示不限制。B站画质默认 `64`（720P），编码默认 `auto`，如果群里客户端对 HEVC/AV1 兼容不好，可以改成 `avc`。
+Karin WebUI 会打开 Hira 自带配置页 `/hira/karin-config`。配置页使用和 KKK 最新面板一致的 React + HeroUI + Tailwind 组件栈：顶部 Tabs、卡片分组、浮动重新读取/保存按钮，并复用 Karin Web 登录态。B站和抖音下载上限按分钟填写；配置文件中仍保存为秒。`0` 表示不限制。B站画质默认 `64`（720P），编码默认 `auto`，如果群里客户端对 HEVC/AV1 兼容不好，可以改成 `avc`。
 
 小黑盒解析需要在 `resolver.cookies.xiaoheihe` 配置 Cookie。AI 总结默认关闭，需要在配置面板或 `ai.yaml` 启用并填写 API Key。代理和各平台 Cookie 都是可选项，留空不会阻止保存。
 
@@ -77,3 +77,5 @@ pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+`pnpm build` 会先构建 Web 配置页到 `resources/web/`，再构建 Karin 插件运行时代码。

@@ -1,6 +1,6 @@
 import { fetchText } from '@/services/http'
 
-import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
+import type { ResolvedPost, ResolverFailure, ResolverResult, RichContentBlock } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
   platform: 'xiaohongshu',
@@ -17,6 +17,29 @@ const pushUnique = (items: string[], value: unknown) => {
   if (typeof value === 'string' && value.trim() && !items.includes(value)) items.push(value)
 }
 
+const pushUniqueMany = (items: string[], value: unknown) => {
+  if (Array.isArray(value)) {
+    for (const item of value) pushUnique(items, item)
+    return
+  }
+  pushUnique(items, value)
+}
+
+const compactString = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+
+const bestImageUrl = (image: Record<string, any>) => {
+  return compactString(image.urlDefault) || compactString(image.url) || compactString(image.urlPre)
+}
+
+const xiaohongshuTags = (note: Record<string, any>) => {
+  const tags: string[] = []
+  for (const tag of Array.isArray(note.tagList) ? note.tagList : []) {
+    const value = compactString(tag?.name || tag?.tagName)
+    if (value && !tags.includes(value)) tags.push(value)
+  }
+  return tags
+}
+
 export const extractXiaohongshuNoteId = (url: string) => {
   try {
     const parsed = new URL(url)
@@ -26,50 +49,81 @@ export const extractXiaohongshuNoteId = (url: string) => {
   }
 }
 
-const selectNote = (payload: unknown) => {
-  const root = asObject(payload)
-  const directNote = asObject(root?.note)
-  if (directNote) return directNote
+const looksLikeNote = (value: unknown) => {
+  const note = asObject(value)
+  if (!note) return false
+  return Boolean(note.title || note.desc || note.imageList || note.video)
+}
 
-  const noteDetailMap = asObject(root?.noteDetailMap)
-    ?? asObject(root?.state?.note?.noteDetailMap)
-    ?? asObject(root?.note?.noteDetailMap)
-  const firstDetail = noteDetailMap ? asObject(Object.values(noteDetailMap)[0]) : undefined
+const selectFromNoteDetailMap = (value: unknown, noteId?: string) => {
+  const noteDetailMap = asObject(value)
+  if (!noteDetailMap) return undefined
+
+  const detail = noteId ? asObject(noteDetailMap[noteId]) : undefined
+  const firstDetail = detail ?? asObject(Object.values(noteDetailMap)[0])
   return asObject(firstDetail?.note) ?? firstDetail
 }
 
+const selectNote = (payload: unknown, noteId?: string) => {
+  const root = asObject(payload)
+  const noteContainer = asObject(root?.note)
+
+  return selectFromNoteDetailMap(root?.noteDetailMap, noteId)
+    ?? selectFromNoteDetailMap(root?.state?.note?.noteDetailMap, noteId)
+    ?? selectFromNoteDetailMap(noteContainer?.noteDetailMap, noteId)
+    ?? (looksLikeNote(noteContainer) ? noteContainer : undefined)
+}
+
 export const normalizeXiaohongshuNote = (pageUrl: string, payload: unknown): ResolvedPost | ResolverFailure => {
-  const note = selectNote(payload)
+  const note = selectNote(payload, extractXiaohongshuNoteId(pageUrl))
   if (!note) return failure('小红书页面数据异常')
 
   const images: string[] = []
   const videos: string[] = []
 
   for (const image of Array.isArray(note.imageList) ? note.imageList : []) {
-    pushUnique(images, image?.urlDefault)
-    pushUnique(images, image?.url)
-    pushUnique(images, image?.urlPre)
+    const imageObject = asObject(image)
+    if (imageObject) pushUnique(images, bestImageUrl(imageObject))
   }
 
   const stream = asObject(note.video?.media?.stream)
   for (const item of Array.isArray(stream?.h264) ? stream.h264 : []) {
+    pushUniqueMany(videos, item?.backupUrls)
+    pushUniqueMany(videos, item?.backupUrl)
     pushUnique(videos, item?.masterUrl)
   }
   for (const item of Array.isArray(stream?.h265) ? stream.h265 : []) {
+    pushUniqueMany(videos, item?.backupUrls)
+    pushUniqueMany(videos, item?.backupUrl)
     pushUnique(videos, item?.masterUrl)
   }
 
   if (images.length === 0 && videos.length === 0) return failure('未找到小红书媒体资源')
 
+  const description = String(note.desc || '')
+  const contentBlocks: RichContentBlock[] = [
+    description.trim() ? { type: 'text', text: description } : undefined,
+    ...images.map(url => ({ type: 'image' as const, url }))
+  ].filter(Boolean) as RichContentBlock[]
+  const tags = xiaohongshuTags(note)
+  const authorAvatar = compactString(note.user?.avatar || note.user?.image || note.user?.imageUrl)
+
   return {
     platform: 'xiaohongshu',
-    displayName: '小红书',
+    displayName: '小红书笔记',
     title: String(note.title || '小红书笔记'),
-    description: String(note.desc || ''),
+    description,
     author: note.user?.nickname,
     pageUrl,
     videos,
-    images
+    images,
+    extras: {
+      coverUrl: images[0],
+      contentBlocks,
+      tags,
+      authorAvatar: authorAvatar || undefined,
+      createdAt: note.time || note.createTime
+    }
   }
 }
 

@@ -7,6 +7,7 @@ logs/
 temp/
 cache/
 coverage/
+.superpowers/
 
 .env
 .env.*

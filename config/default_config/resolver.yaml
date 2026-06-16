@@ -4,6 +4,9 @@ enabled: true
 # Karin + KKK 兼容模式，开启后跳过 KKK 已覆盖域名
 kkkCompat: true
 
+# 是否额外发送评论/回复合并转发
+commentsEnabled: true
+
 # 自动解析优先级。保持低于 KKK 的默认最高优先级。
 priority: 900
 

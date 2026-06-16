@@ -1,6 +1,7 @@
 import type { Message } from 'node-karin'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { defaultConfig } from '@/config/defaults'
 import type { ResolvedPost } from '@/resolvers/types'
 import { replyMusicList, replyResolvedPost } from '@/services/message'
 
@@ -41,10 +42,12 @@ describe('replyResolvedPost', () => {
   afterEach(() => {
     vi.clearAllMocks()
     fsMocks.existsSync.mockReturnValue(false)
+    karinMocks.render.mockReset()
     karinMocks.render.mockResolvedValue(Buffer.from('music-card').toString('base64'))
+    defaultConfig.resolver.commentsEnabled = true
   })
 
-  it('sends local videos through a unique copy to avoid protocol media cache reuse', async () => {
+  it('sends local videos with a file protocol like KKK', async () => {
     const reply = vi.fn(async () => ({}))
     const e = { reply } as unknown as Message
     const video = 'D:\\tmp\\douyin.mp4'
@@ -65,12 +68,9 @@ describe('replyResolvedPost', () => {
     const calls = reply.mock.calls as unknown as Array<[unknown]>
     const videoPayload = calls[1]?.[0] as { type: string, file: string }
     expect(videoPayload.type).toBe('video')
-    expect(videoPayload.file).not.toBe(`file://${video}`)
-    expect(videoPayload.file).toMatch(/^file:\/\/.*douyin\.send-\d+-[a-z0-9]+\.mp4$/)
-    const copiedFile = videoPayload.file.replace(/^file:\/\//, '')
-    const copiedLocalFile = copiedFile.replace(/\//g, '\\')
-    expect(fsMocks.copyFileSync).toHaveBeenCalledWith(video, copiedLocalFile)
-    expect(fsMocks.appendFileSync).toHaveBeenCalledWith(copiedLocalFile, expect.any(Buffer))
+    expect(videoPayload.file).toBe('file://D:/tmp/douyin.mp4')
+    expect(fsMocks.copyFileSync).not.toHaveBeenCalled()
+    expect(fsMocks.appendFileSync).not.toHaveBeenCalled()
   })
 
   it('sends resolved videos as a separate message after text and images', async () => {
@@ -91,10 +91,10 @@ describe('replyResolvedPost', () => {
     const calls = reply.mock.calls as unknown as Array<[unknown]>
     expect(reply).toHaveBeenCalledTimes(2)
     expect(calls[0]?.[0]).toEqual([
-      expect.objectContaining({ type: 'text', text: expect.stringContaining('识别：抖音，标题') }),
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` },
       { type: 'image', file: 'https://img/cover.jpg' }
     ])
-    expect(calls[1]?.[0]).toEqual({ type: 'video', file: 'file://D:/tmp/douyin.mp4' })
+    expect(calls[1]?.[0]).toMatchObject({ type: 'video', file: 'file://D:/tmp/douyin.mp4' })
   })
 
   it('keeps remote video urls unchanged when sending resolver videos', async () => {
@@ -132,19 +132,75 @@ describe('replyResolvedPost', () => {
     await replyResolvedPost(e, post)
 
     const calls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(calls[0]?.[0]).toEqual([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+  })
+
+  it('falls back to plain resolver text when resolver card rendering fails', async () => {
+    const reply = vi.fn(async () => ({}))
+    const e = { reply } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'douyin',
+      displayName: '抖音',
+      title: '标题',
+      description: '简介',
+      pageUrl: 'https://www.douyin.com/video/738',
+      images: [],
+      videos: []
+    }
+    karinMocks.render.mockRejectedValueOnce(new Error('render offline'))
+
+    await replyResolvedPost(e, post)
+
+    const calls = reply.mock.calls as unknown as Array<[unknown]>
     const payload = calls[0]?.[0] as Array<{ type?: string, text?: string }>
     const text = payload.find(item => item.type === 'text')?.text
     expect(text).toContain('识别：抖音，标题')
     expect(text).not.toContain('Hira：')
   })
 
-  it('sends multi-image resolver results as a merged forward message', async () => {
+  it('renders resolver failures as a diagnostic card and falls back to text if rendering fails', async () => {
+    const reply = vi.fn(async () => ({}))
+    const e = { reply } as unknown as Message
+
+    await replyResolvedPost(e, {
+      platform: 'weibo',
+      displayName: '微博',
+      ok: false,
+      reason: '接口返回 403'
+    })
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+
+    vi.clearAllMocks()
+    karinMocks.render.mockRejectedValueOnce(new Error('render offline'))
+
+    await replyResolvedPost(e, {
+      platform: 'weibo',
+      displayName: '微博',
+      ok: false,
+      reason: '接口返回 403'
+    })
+
+    expect(reply).toHaveBeenCalledWith('微博解析失败：接口返回 403')
+  })
+
+  it('sends Xiaohongshu rich notes as card first and forwards body content after it', async () => {
     const reply = vi.fn(async () => ({}))
     const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
     const contact = { scene: 'group', peer: '887223378', name: '测试群' }
     const e = {
       reply,
       contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
       selfId: '3133320859',
       bot: {
         account: { selfId: '3133320859', name: 'Hira' },
@@ -153,29 +209,346 @@ describe('replyResolvedPost', () => {
     } as unknown as Message
     const post: ResolvedPost = {
       platform: 'xiaohongshu',
-      displayName: '小红书',
+      displayName: '小红书笔记',
       title: '图集标题',
       description: '图集简介',
       pageUrl: 'https://www.xiaohongshu.com/explore/123',
       images: ['https://img/1.jpg', 'https://img/2.jpg'],
-      videos: []
+      videos: ['https://video/xhs.mp4'],
+      extras: {
+        coverUrl: 'https://img/1.jpg',
+        contentBlocks: [
+          { type: 'text', text: '图集简介' },
+          { type: 'image', url: 'https://img/1.jpg' },
+          { type: 'image', url: 'https://img/2.jpg' }
+        ]
+      }
     }
 
     await replyResolvedPost(e, post)
 
-    expect(reply).not.toHaveBeenCalled()
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(1)
     expect(sendForwardMsg).toHaveBeenCalledWith(
       contact,
-      expect.arrayContaining([
-        expect.objectContaining({ type: 'node' })
-      ]),
+      expect.any(Array),
       expect.objectContaining({
-        prompt: '小红书解析结果',
-        summary: '查看2张图片'
+        prompt: '小红书笔记正文',
+        summary: '查看完整图文'
       })
     )
-    const forwardCalls = sendForwardMsg.mock.calls as unknown as Array<[unknown, Array<{ nickname?: string }>, unknown]>
-    expect(forwardCalls[0]?.[1].map(node => node.nickname)).toEqual(['小红书解析', '小红书解析', '小红书解析'])
+    const forwardCalls = sendForwardMsg.mock.calls as unknown as Array<[unknown, Array<{
+      subType?: string
+      userId?: string
+      nickname?: string
+      message?: Array<{ type?: string, text?: string, file?: string }>
+    }>, unknown]>
+    const firstForwardNodes = forwardCalls[0]?.[1] || []
+    expect(firstForwardNodes).toHaveLength(1)
+    expect(firstForwardNodes[0]).toMatchObject({
+      type: 'node',
+      subType: 'fake',
+      userId: '10001',
+      nickname: '发帖人昵称'
+    })
+    expect(firstForwardNodes[0]?.message).toEqual([
+      { type: 'text', text: '图集简介' },
+      { type: 'image', file: 'https://img/1.jpg' },
+      { type: 'image', file: 'https://img/2.jpg' }
+    ])
+    const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/xhs.mp4' })
+  })
+
+  it('sends Xiaoheihe rich posts as card first and forwards content and comments after it', async () => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'xiaoheihe',
+      displayName: '小黑盒帖子',
+      title: '图文混排帖子',
+      description: '摘要',
+      pageUrl: 'https://www.xiaoheihe.cn/app/bbs/link/abc123',
+      images: ['https://img/cover.jpg'],
+      videos: ['https://cdn.example.test/xhh.mp4'],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '正文第一段' },
+          { type: 'image', url: 'https://img/a.jpg' },
+          { type: 'text', text: '正文第二段' }
+        ],
+        commentBlocks: [
+          {
+            author: '路人',
+            replyTo: '作者',
+            floor: 2,
+            location: '上海',
+            text: '评论内容',
+            images: ['https://img/comment.jpg']
+          }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(2)
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      1,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '小黑盒帖子正文',
+        summary: '查看完整图文'
+      })
+    )
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      2,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '小黑盒帖子评论',
+        summary: '查看1条评论'
+      })
+    )
+    const forwardCalls = sendForwardMsg.mock.calls as unknown as Array<[unknown, Array<{
+      subType?: string
+      userId?: string
+      nickname?: string
+      message?: Array<{ type?: string, text?: string, file?: string }>
+    }>, unknown]>
+    const firstForwardNodes = forwardCalls[0]?.[1] || []
+    expect(firstForwardNodes).toHaveLength(1)
+    expect(firstForwardNodes[0]).toMatchObject({
+      type: 'node',
+      subType: 'fake',
+      userId: '10001',
+      nickname: '发帖人昵称'
+    })
+    expect(firstForwardNodes[0]?.message).toEqual([
+      { type: 'text', text: '正文第一段' },
+      { type: 'image', file: 'https://img/a.jpg' },
+      { type: 'text', text: '正文第二段' }
+    ])
+    const secondForwardNodes = forwardCalls[1]?.[1] || []
+    expect(secondForwardNodes).toHaveLength(1)
+    expect(secondForwardNodes[0]).toMatchObject({
+      type: 'node',
+      subType: 'fake',
+      userId: '1',
+      nickname: '路人'
+    })
+    expect(secondForwardNodes[0]?.message).toEqual([
+      { type: 'text', text: '路人 回复 作者\n2楼 · 上海\n\n评论内容' },
+      { type: 'image', file: 'https://img/comment.jpg' }
+    ])
+    const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://cdn.example.test/xhh.mp4' })
+  })
+
+  it('sends Weibo rich posts with the shared preview card and fake forwards', async () => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'weibo',
+      displayName: '微博',
+      title: '微博标题',
+      description: '正文摘要',
+      pageUrl: 'https://weibo.com/123/abc',
+      images: ['https://img/cover.jpg'],
+      videos: [],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '正文第一段' },
+          { type: 'image', url: 'https://img/a.jpg' }
+        ],
+        commentBlocks: [
+          { author: '路人', text: '评论内容', images: [] }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(2)
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      1,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '微博正文',
+        summary: '查看完整图文'
+      })
+    )
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      2,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '微博评论',
+        summary: '查看1条评论'
+      })
+    )
+  })
+
+  it('skips rich comment forwards when resolver comments are disabled', async () => {
+    defaultConfig.resolver.commentsEnabled = false
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'weibo',
+      displayName: '微博',
+      title: '微博标题',
+      description: '正文摘要',
+      pageUrl: 'https://weibo.com/123/abc',
+      images: ['https://img/cover.jpg'],
+      videos: [],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '正文第一段' }
+        ],
+        commentBlocks: [
+          { author: '路人', text: '评论内容', images: [] }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(1)
+    expect(sendForwardMsg).toHaveBeenCalledWith(
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '微博正文',
+        summary: '查看完整图文'
+      })
+    )
+  })
+
+  it('sends Tieba rich posts with the shared preview card and fake forwards', async () => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'tieba',
+      displayName: '贴吧',
+      title: '贴吧标题',
+      description: '正文摘要',
+      pageUrl: 'https://tieba.baidu.com/p/123',
+      images: ['https://img/cover.jpg'],
+      videos: ['https://video/tieba.mp4'],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '楼主正文' },
+          { type: 'image', url: 'https://img/a.jpg' }
+        ],
+        commentBlocks: [
+          { author: '层主', floor: 2, text: '回复内容', images: [] }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(2)
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      1,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '贴吧帖子正文',
+        summary: '查看完整图文'
+      })
+    )
+    expect(sendForwardMsg).toHaveBeenNthCalledWith(
+      2,
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt: '贴吧回复',
+        summary: '查看1条回复'
+      })
+    )
+    const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/tieba.mp4' })
   })
 
   it('sends long resolver descriptions as a merged forward message', async () => {

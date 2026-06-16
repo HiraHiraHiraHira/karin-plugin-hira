@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 
 import { fetchJson } from '@/services/http'
 
-import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
+import type { ResolvedPost, ResolverFailure, ResolverResult, RichCommentBlock, RichContentBlock } from './types'
 
 export type XiaoheiheTargetType = 'bbs' | 'pc' | 'console' | 'mobile'
 
@@ -83,7 +83,9 @@ const buildHkey = (path: string, timestamp: number, nonce: string) => {
     ua(chars[0]) ^ fa(chars[1]) ^ na(chars[2]) ^ ba(chars[3]),
     ba(chars[0]) ^ ua(chars[1]) ^ fa(chars[2]) ^ na(chars[3]),
     na(chars[0]) ^ ba(chars[1]) ^ ua(chars[2]) ^ fa(chars[3]),
-    fa(chars[0]) ^ na(chars[1]) ^ ba(chars[2]) ^ ua(chars[3])
+    fa(chars[0]) ^ na(chars[1]) ^ ba(chars[2]) ^ ua(chars[3]),
+    chars[4],
+    chars[5]
   ]
   const suffix = String(mixed.reduce((sum, value) => sum + value, 0) % 100).padStart(2, '0')
 
@@ -172,7 +174,7 @@ const stripHtml = (html: string) => {
   return html
     .replace(/<a[^>]*?href="([^"]*?)"[^>]*?>(.*?)<\/a>/g, (_match, href: string, text: string) => {
       const cleanText = text.replace(/<[^>]+>/g, '').trim()
-      const cleanHref = href.replace(/\\/g, '')
+      const cleanHref = normalizeHeyboxHref(href.replace(/\\/g, ''))
       if (!cleanText) return ''
       return cleanHref.startsWith('http') ? `『${cleanText}』 (${cleanHref})` : `『${cleanText}』`
     })
@@ -183,17 +185,95 @@ const stripHtml = (html: string) => {
     .trim()
 }
 
+const normalizeHeyboxHref = (href: string) => {
+  const cleanHref = href.replace(/\\/g, '')
+  try {
+    const decoded = decodeURIComponent(cleanHref)
+    const match = decoded.match(/heybox:\/\/({.*})/)
+    if (!match?.[1]) return cleanHref
+
+    const data = JSON.parse(match[1])
+    if (data.protocol_type === 'openUser' && data.user_id) {
+      return `https://www.xiaoheihe.cn/app/user/profile/${data.user_id}`
+    }
+    if (data.protocol_type === 'openGameDetail' && data.app_id) {
+      return `https://www.xiaoheihe.cn/app/topic/game/${data.game_type || 'pc'}/${data.app_id}`
+    }
+    if (data.protocol_type === 'openLink' && data.link?.linkid) {
+      return `https://www.xiaoheihe.cn/app/bbs/link/${data.link.linkid}`
+    }
+  } catch {
+    return cleanHref
+  }
+
+  return cleanHref
+}
+
 const pushUnique = (items: string[], value: string | undefined) => {
   const clean = optimizeXiaoheiheImageUrl(value)
   if (clean && !items.includes(clean)) items.push(clean)
 }
 
+const pushTextBlock = (blocks: RichContentBlock[], text: string | undefined) => {
+  const clean = String(text || '').replace(/\n{3,}/g, '\n\n').trim()
+  if (clean) blocks.push({ type: 'text', text: clean })
+}
+
+const pushImageBlock = (blocks: RichContentBlock[], images: string[], url: string | undefined) => {
+  const clean = optimizeXiaoheiheImageUrl(url)
+  if (!clean) return
+  blocks.push({ type: 'image', url: clean })
+  if (!images.includes(clean)) images.push(clean)
+}
+
+const extractIframeUrl = (iframe: string) => {
+  const src = iframe.match(/src="([^"]+)"/)?.[1]?.replace(/\\/g, '')
+  if (!src) return undefined
+  return src.startsWith('//') ? `https:${src}` : src
+}
+
+const parseHtmlBlocks = (html: string, images: string[]) => {
+  const blocks: RichContentBlock[] = []
+  const parts = html.split(/(<img\b[^>]*>|<iframe\b[\s\S]*?<\/iframe>)/gi).filter(Boolean)
+  let textBuffer = ''
+
+  for (const part of parts) {
+    if (/^<img\b/i.test(part)) {
+      pushTextBlock(blocks, stripHtml(textBuffer))
+      textBuffer = ''
+
+      const gameId = part.match(/data-gameid="(\d+)"/)?.[1]
+      const imageUrl = part.match(/data-original="([^"]+)"/)?.[1] || part.match(/src="([^"]+)"/)?.[1]
+      if (gameId) {
+        pushTextBlock(blocks, `相关游戏：https://www.xiaoheihe.cn/app/topic/game/pc/${gameId}`)
+      } else {
+        pushImageBlock(blocks, images, imageUrl)
+      }
+      continue
+    }
+
+    if (/^<iframe\b/i.test(part)) {
+      pushTextBlock(blocks, stripHtml(textBuffer))
+      textBuffer = ''
+      const iframeUrl = extractIframeUrl(part)
+      if (iframeUrl) pushTextBlock(blocks, `(${iframeUrl})`)
+      continue
+    }
+
+    textBuffer += part
+  }
+
+  pushTextBlock(blocks, stripHtml(textBuffer))
+  return blocks
+}
+
 const parseTextEntities = (linkText: unknown) => {
   const texts: string[] = []
   const images: string[] = []
+  const blocks: RichContentBlock[] = []
 
   if (typeof linkText !== 'string' || !/^\s*[\[{]/.test(linkText)) {
-    return { texts, images }
+    return { texts, images, blocks }
   }
 
   try {
@@ -204,27 +284,34 @@ const parseTextEntities = (linkText: unknown) => {
       if (!entity || typeof entity !== 'object') continue
 
       if (entity.type === 'text' && entity.text) {
-        texts.push(String(entity.text).trim())
+        const text = String(entity.text).trim()
+        if (text) {
+          texts.push(text)
+          blocks.push({ type: 'text', text })
+        }
       }
 
       if (entity.type === 'img' && entity.url) {
-        pushUnique(images, String(entity.url))
+        pushImageBlock(blocks, images, String(entity.url))
       }
 
       if (entity.type === 'html' && entity.text) {
         const html = String(entity.text)
-        const imageMatches = html.matchAll(/<img[^>]+data-original="([^"]+)"/g)
-        for (const match of imageMatches) pushUnique(images, match[1])
-
-        const textOnly = stripHtml(html.replace(/<img[^>]*>/g, '\n'))
+        const htmlBlocks = parseHtmlBlocks(html, images)
+        blocks.push(...htmlBlocks)
+        const textOnly = htmlBlocks
+          .filter((block): block is Extract<RichContentBlock, { type: 'text' }> => block.type === 'text')
+          .map(block => block.text)
+          .join('\n')
+          .trim()
         if (textOnly) texts.push(textOnly)
       }
     }
   } catch {
-    return { texts, images }
+    return { texts, images, blocks }
   }
 
-  return { texts, images }
+  return { texts, images, blocks }
 }
 
 const normalizeComment = (comment: any) => {
@@ -233,6 +320,24 @@ const normalizeComment = (comment: any) => {
   const text = stripHtml(String(comment.text || ''))
   const floor = comment.floor_num ? `${comment.floor_num}楼 ` : ''
   return `${floor}${user}${location}\n${text}`.trim()
+}
+
+const normalizeCommentBlock = (comment: any): RichCommentBlock | undefined => {
+  const text = stripHtml(String(comment.text || ''))
+  if (!text) return undefined
+
+  const images: string[] = []
+  for (const image of comment.imgs ?? []) pushUnique(images, image.url)
+
+  return {
+    author: comment.user?.username || '匿名用户',
+    replyTo: comment.replyuser?.username,
+    floor: typeof comment.floor_num === 'number' ? comment.floor_num : undefined,
+    location: comment.ip_location || undefined,
+    time: comment.create_at ? String(comment.create_at) : undefined,
+    text,
+    images
+  }
 }
 
 const failure = (reason: string): ResolverFailure => ({
@@ -263,6 +368,7 @@ export const normalizeXiaoheihePost = (pageUrl: string, payload: unknown): Resol
       : []
 
   const comments: string[] = []
+  const commentBlocks: RichCommentBlock[] = []
   const commentThreads = Array.isArray(result?.comments) ? result.comments : []
   if (commentThreads.length > 0) {
     for (const thread of commentThreads.slice(0, 5)) {
@@ -270,6 +376,8 @@ export const normalizeXiaoheihePost = (pageUrl: string, payload: unknown): Resol
       for (const comment of threadComments.slice(0, 2)) {
         const normalized = normalizeComment(comment)
         if (normalized) comments.push(normalized)
+        const commentBlock = normalizeCommentBlock(comment)
+        if (commentBlock && commentBlocks.length < 50) commentBlocks.push(commentBlock)
         for (const image of comment.imgs ?? []) pushUnique(images, image.url)
       }
     }
@@ -290,7 +398,16 @@ export const normalizeXiaoheihePost = (pageUrl: string, payload: unknown): Resol
     author: link.user?.username,
     pageUrl,
     videos: link.has_video === 1 && link.video_url ? [link.video_url] : [],
-    images
+    images,
+    extras: {
+      contentBlocks: textEntities.blocks,
+      commentBlocks,
+      tags,
+      coverUrl: optimizeXiaoheiheImageUrl(link.thumb || link.video_thumb),
+      authorAvatar: optimizeXiaoheiheImageUrl(link.user?.avatar || link.user?.avatar_url),
+      location: link.ip_location || link.location,
+      createdAt: link.create_at ? String(link.create_at) : undefined
+    }
   }
 }
 

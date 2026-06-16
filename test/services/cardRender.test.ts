@@ -1,14 +1,38 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  buildErrorCardHtml,
   buildHelpCardHtml,
   buildMusicListCardHtml,
+  buildXiaohongshuPreviewCardHtml,
+  buildXiaoheihePreviewCardHtml,
+  buildResolverPreviewCardHtml,
+  buildResolverCardHtml,
   buildStatusCardHtml,
+  renderTemplateHtml,
   writeCardHtmlFile,
   renderCardImage
 } from '@/services/cardRender'
 
 describe('cardRender', () => {
+  it('renders cards through a reusable react template document', () => {
+    const html = renderTemplateHtml({
+      hero: 'TEST',
+      eyebrow: 'TEMPLATE.SYSTEM',
+      title: '模板测试',
+      subtitle: 'React 渲染层',
+      watermark: 'SPEC',
+      body: '<section data-testid="body">ok</section>'
+    })
+
+    expect(html).toContain('<!doctype html>')
+    expect(html).toContain('data-template-engine="react-static"')
+    expect(html).toContain('hira-render-shell')
+    expect(html).toContain('TEMPLATE.SYSTEM')
+    expect(html).toContain('模板测试')
+    expect(html).toContain('<section data-testid="body">ok</section>')
+  })
+
   it('builds a kkk-inspired grouped help card instead of plain help text', () => {
     const html = buildHelpCardHtml([
       {
@@ -92,6 +116,141 @@ describe('cardRender', () => {
     expect(html).toContain('status-pill status-ok')
     expect(html).toContain('status-pill status-off')
     expect(html).toContain('用于合并 B站 DASH')
+  })
+
+  it('builds a resolver result card with platform, title, counts, and source url', () => {
+    const html = buildResolverCardHtml({
+      platform: 'weibo',
+      displayName: '微博',
+      title: '一条微博',
+      description: '这是一段解析内容',
+      author: 'Hira',
+      pageUrl: 'https://weibo.com/123/abc',
+      images: ['https://img/1.jpg', 'https://img/2.jpg'],
+      videos: ['D:/tmp/video.mp4']
+    })
+
+    expect(html).toContain('RESOLVER.RESULT')
+    expect(html).toContain('解析结果')
+    expect(html).toContain('微博')
+    expect(html).toContain('一条微博')
+    expect(html).toContain('Hira')
+    expect(html).toContain('图片')
+    expect(html).toContain('2')
+    expect(html).toContain('视频')
+    expect(html).toContain('1')
+    expect(html).toContain('https://weibo.com/123/abc')
+  })
+
+  it('builds a kkk-like light Xiaoheihe preview card without generic resolver chrome', () => {
+    const html = buildXiaoheihePreviewCardHtml({
+      platform: 'xiaoheihe',
+      displayName: '小黑盒帖子',
+      title: '图文混排帖子',
+      description: '正文第一段内容预览，后续图文按原文顺序进入合并转发。',
+      author: 'Hira',
+      pageUrl: 'https://www.xiaoheihe.cn/app/bbs/link/abc123',
+      images: ['https://img/cover.jpg', 'https://img/a.jpg'],
+      videos: ['https://cdn.example.test/xhh.mp4'],
+      extras: {
+        tags: ['Steam', 'AI'],
+        coverUrl: 'https://img/cover.jpg',
+        authorAvatar: 'https://img/avatar.jpg',
+        location: '上海',
+        commentBlocks: [{ author: '路人', text: '评论', images: [] }]
+      }
+    })
+
+    expect(html).toContain('xhh-preview-shell')
+    expect(html).toContain('小黑盒帖子')
+    expect(html).toContain('图文混排帖子')
+    expect(html).toContain('Hira')
+    expect(html).toContain('正文第一段内容预览')
+    expect(html).toContain('#Steam')
+    expect(html).toContain('#AI')
+    expect(html).toContain('2 张图片')
+    expect(html).toContain('1 个视频')
+    expect(html).toContain('1 条评论')
+    expect(html).toContain('padding: 8px;')
+    expect(html).toContain('box-shadow: none;')
+    expect((html.match(/border-radius: 8px;/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect(html).not.toContain('padding: 24px;')
+    expect(html).not.toContain('0 20px 46px')
+    expect(html).not.toContain('border-radius: 20px;')
+    expect(html).not.toContain('border-radius: 18px;')
+    expect(html).not.toContain('RESOLVE')
+    expect(html).not.toContain('resolver-metrics')
+    expect(html).not.toContain('https://www.xiaoheihe.cn/app/bbs/link/abc123')
+  })
+
+  it('omits comment counts from resolver preview cards when comments are disabled', () => {
+    const html = buildResolverPreviewCardHtml({
+      platform: 'weibo',
+      displayName: '微博',
+      title: '微博标题',
+      description: '微博正文\n\n热门评论\n路人：评论',
+      images: ['https://img/cover.jpg'],
+      videos: [],
+      extras: {
+        commentBlocks: [{ author: '路人', text: '评论', images: [] }]
+      }
+    }, undefined, { commentsEnabled: false })
+
+    expect(html).not.toContain('1 条评论')
+    expect(html).toContain('微博正文')
+    expect(html).not.toContain('热门评论')
+    expect(html).not.toContain('路人：评论')
+  })
+
+  it('builds a kkk-like light Xiaohongshu preview card from the shared resolver template', () => {
+    const html = buildXiaohongshuPreviewCardHtml({
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '周末咖啡路线',
+      description: '第一家店的拿铁很稳，第二家适合拍照，图文顺序会进入合并转发。',
+      author: 'Hira',
+      pageUrl: 'https://www.xiaohongshu.com/explore/abc123',
+      images: ['https://img/cover.jpg', 'https://img/a.jpg'],
+      videos: [],
+      extras: {
+        coverUrl: 'https://img/cover.jpg',
+        authorAvatar: 'https://img/avatar.jpg',
+        tags: ['咖啡', '周末']
+      }
+    })
+
+    expect(html).toContain('xhh-preview-shell')
+    expect(html).toContain('小红书笔记')
+    expect(html).toContain('周末咖啡路线')
+    expect(html).toContain('Hira')
+    expect(html).toContain('第一家店的拿铁很稳')
+    expect(html).toContain('#咖啡')
+    expect(html).toContain('#周末')
+    expect(html).toContain('2 张图片')
+    expect(html).toContain('padding: 8px;')
+    expect(html).toContain('box-shadow: none;')
+    expect((html.match(/border-radius: 8px;/g) || []).length).toBeGreaterThanOrEqual(2)
+    expect(html).not.toContain('RESOLVE')
+    expect(html).not.toContain('resolver-metrics')
+    expect(html).not.toContain('https://www.xiaohongshu.com/explore/abc123')
+  })
+
+  it('builds an error diagnostic card without leaking raw html', () => {
+    const html = buildErrorCardHtml({
+      title: '解析失败',
+      subtitle: '微博',
+      reason: '<script>alert(1)</script>',
+      suggestion: '检查 Cookie 或稍后重试。',
+      details: ['接口返回 403', '触发命令：微博链接']
+    })
+
+    expect(html).toContain('SYSTEM.ERROR')
+    expect(html).toContain('诊断卡片')
+    expect(html).toContain('解析失败')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('<script>alert(1)</script>')
+    expect(html).toContain('接口返回 403')
+    expect(html).toContain('检查 Cookie 或稍后重试。')
   })
 
   it('renders card html to a base64 image element', async () => {

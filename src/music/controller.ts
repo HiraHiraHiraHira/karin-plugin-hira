@@ -1,5 +1,6 @@
 import type { Message } from 'node-karin'
 
+import { isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { parseMusicCommand } from '@/music/commandParser'
 import { BilibiliMusicProvider, createMusicProviders } from '@/music/providers'
@@ -39,6 +40,7 @@ const selectItem = (e: Message, index?: number): MusicItem | undefined => {
 }
 
 export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
+  if (!isHiraAppEnabled()) return next?.()
   if (!Config.music.enabled) return next?.()
 
   const command = parseMusicCommand(e.msg)

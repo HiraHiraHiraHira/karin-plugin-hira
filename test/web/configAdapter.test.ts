@@ -9,6 +9,7 @@ describe('web config adapter', () => {
 
     expect(flat['app.enabled']).toBe(true)
     expect(flat['music.defaultSource']).toBe('qq')
+    expect(flat['resolver.commentsEnabled']).toBe(true)
     expect(flat['music.api.neteaseBaseUrl']).toBe('http://music.163.com/api')
     expect(flat['music.cookies.netease']).toBe('')
 
@@ -47,6 +48,7 @@ describe('web config adapter', () => {
         {
           resolverPriority: '950',
           resolverKkkCompat: false,
+          resolverCommentsEnabled: false,
           resolverBilibiliMaxVideoDurationMinutes: '20',
           resolverBilibiliQuality: '80',
           resolverBilibiliCodec: 'avc',
@@ -63,6 +65,7 @@ describe('web config adapter', () => {
       resolver: {
         priority: '950',
         kkkCompat: false,
+        commentsEnabled: false,
         bilibili: {
           maxVideoDurationSeconds: 1200,
           quality: '80',

@@ -7,15 +7,6 @@ type Rule = {
   test: (url: string, hostname: string) => boolean
 }
 
-const isMihoyoDomain = (hostname: string) => {
-  return [
-    'miyoushe.com',
-    'mihoyo.com',
-    'hoyolab.com',
-    'hoyoverse.com'
-  ].some(domain => hostname === domain || hostname.endsWith(`.${domain}`))
-}
-
 const rules: Rule[] = [
   {
     platform: 'bilibili',
@@ -71,7 +62,7 @@ const rules: Rule[] = [
 
 export const matchResolver = (url: string): ResolverMatch | undefined => {
   const hostname = hostnameOf(url)
-  if (!hostname || isMihoyoDomain(hostname)) return undefined
+  if (!hostname) return undefined
 
   const rule = rules.find(item => item.test(url, hostname))
   if (!rule) return undefined

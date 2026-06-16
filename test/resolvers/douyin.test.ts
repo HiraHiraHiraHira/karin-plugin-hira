@@ -117,6 +117,31 @@ describe('douyin resolver helpers', () => {
     })
   })
 
+  it('keeps KKK-style bit_rate url_list urls before generated play endpoints', () => {
+    const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
+      aweme_detail: {
+        desc: '抖音标题',
+        video: {
+          cover: { url_list: ['https://img/cover.jpg'] },
+          bit_rate: [{
+            format: 'mp4',
+            gear_name: 'normal_1080_0',
+            play_addr: {
+              uri: 'v0200fg10000stable',
+              data_size: 1024,
+              url_list: ['https://v3.douyinvod.com/video/tos/cn/expired.mp4?expire=1&sign=abc']
+            }
+          }]
+        }
+      }
+    }, { quality: '1080p' })
+
+    expect(result).toMatchObject({
+      platform: 'douyin',
+      videos: ['https://v3.douyinvod.com/video/tos/cn/expired.mp4?expire=1&sign=abc']
+    })
+  })
+
   it('returns only metadata and cover when Douyin video exceeds the configured limit', () => {
     const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
       aweme_detail: {

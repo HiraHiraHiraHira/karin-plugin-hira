@@ -20,6 +20,7 @@ export const webFieldPathMap: Record<string, string> = {
   musicCookiesBilibili: 'music.cookies.bilibili',
   resolverEnabled: 'resolver.enabled',
   resolverKkkCompat: 'resolver.kkkCompat',
+  resolverCommentsEnabled: 'resolver.commentsEnabled',
   resolverPriority: 'resolver.priority',
   resolverBilibiliMaxVideoDurationMinutes: 'resolver.bilibili.maxVideoDurationSeconds',
   resolverBilibiliMaxVideoDurationSeconds: 'resolver.bilibili.maxVideoDurationSeconds',
@@ -154,6 +155,7 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
           children: [
             createSwitch('resolverEnabled', '启用多平台解析', config.resolver.enabled, '开启后自动识别支持的平台分享链接。'),
             createSwitch('resolverKkkCompat', 'KKK 兼容模式', config.resolver.kkkCompat, '开启时跳过 KKK 已覆盖的平台，关闭后由 Hira 接管更多平台。'),
+            createSwitch('resolverCommentsEnabled', '发送评论/回复', config.resolver.commentsEnabled !== false, '开启后微博、贴吧、小黑盒等富解析会额外发送评论或回复转发。'),
             input.number('resolverPriority', { label: '解析优先级', description: '修改后需重启 Karin 才能完全生效。', defaultValue: String(config.resolver.priority), rules: [{ min: 0, max: 9999 }] }),
             input.number('resolverBilibiliMaxVideoDurationMinutes', { label: 'B站下载上限分钟', description: '超过上限仅返回视频信息；0 表示不限制。', defaultValue: secondsToMinutesValue(config.resolver.bilibili.maxVideoDurationSeconds), rules: [{ min: 0, max: 360 }] }),
             select.create('resolverBilibiliQuality', { label: 'B站下载画质', description: '控制 B站视频下载的最高画质。', defaultValue: String(config.resolver.bilibili.quality), items: bilibiliQualityItems }),

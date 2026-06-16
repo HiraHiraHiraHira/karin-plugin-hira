@@ -5,6 +5,7 @@ export default defineConfig({
   dts: true,
   clean: true,
   format: ['esm'],
+  hash: false,
   target: 'node18',
   outDir: 'lib',
   external: ['node-karin']
