@@ -10,12 +10,17 @@ import { resolveByGeneralApis } from './general'
 import { shouldSkipForKkkCompat } from './kkkCompat'
 import { resolveKuaishou } from './kuaishou'
 import { matchResolver } from './matcher'
+import { logResolverStage } from './resolverLog'
 import { resolveTieba } from './tieba'
 import type { ResolverResult } from './types'
 import { extractFirstUrl, extractShareCardMeta } from './url'
 import { resolveWeibo } from './weibo'
 import { resolveXiaoheihe } from './xiaoheihe'
 import { resolveXiaohongshu } from './xiaohongshu'
+
+const isPlatformEnabled = (platform: keyof typeof Config.resolver.platforms) => (
+  Config.resolver.platforms[platform] !== false
+)
 
 const resolveMatched = async (url: string, message = ''): Promise<ResolverResult> => {
   const match = matchResolver(url)
@@ -32,7 +37,10 @@ const resolveMatched = async (url: string, message = ''): Promise<ResolverResult
   if (match.platform === 'xiaohongshu') return resolveXiaohongshu(url, config.cookies.xiaohongshu)
   if (match.platform === 'kuaishou') return resolveKuaishou(url, config.generalApis)
 
-  return resolveByGeneralApis(match.displayName, url, config.generalApis)
+  return resolveByGeneralApis(match.displayName, url, config.generalApis, {
+    platform: 'general',
+    pageUrl: url
+  })
 }
 
 export const handleResolverMessage = async (e: Message, next?: () => unknown) => {
@@ -46,6 +54,17 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
 
   const match = matchResolver(url)
   if (!match) return next?.()
+  if (!isPlatformEnabled(match.platform)) {
+    logResolverStage({
+      platform: match.platform,
+      stage: 'match',
+      ok: false,
+      reason: 'platform disabled',
+      url
+    })
+    return next?.()
+  }
+  logResolverStage({ platform: match.platform, stage: 'match', ok: true, url })
 
   const result = await resolveMatched(url, e.msg).catch((error: unknown): ResolverResult => ({
     platform: match.platform,
@@ -53,6 +72,14 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
     ok: false,
     reason: error instanceof Error ? error.message : String(error)
   }))
+  logResolverStage({
+    platform: match.platform,
+    stage: 'normalize',
+    ok: !('ok' in result),
+    reason: 'ok' in result ? result.reason : undefined,
+    url
+  })
   await replyResolvedPost(e, result)
+  logResolverStage({ platform: match.platform, stage: 'send', ok: true, url })
   return true
 }

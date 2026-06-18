@@ -56,6 +56,7 @@ const minutesToSeconds = (value: unknown) => {
 }
 
 const webFieldValueTransforms: Record<string, (value: unknown) => unknown> = {
+  resolverMaxVideoDurationMinutes: minutesToSeconds,
   resolverBilibiliMaxVideoDurationMinutes: minutesToSeconds,
   resolverDouyinMaxVideoDurationMinutes: minutesToSeconds
 }

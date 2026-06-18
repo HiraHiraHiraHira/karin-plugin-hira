@@ -13,6 +13,40 @@ priority: 900
 # 最大视频时长，单位秒；WebUI 中按分钟填写
 maxVideoDurationSeconds: 480
 
+# 平台开关。关闭后对应平台链接交还给后续插件或 Karin 默认流程。
+platforms:
+  bilibili: true
+  douyin: true
+  kuaishou: true
+  weibo: true
+  tieba: true
+  xiaoheihe: true
+  xiaohongshu: true
+  general: true
+
+# 发送策略
+sending:
+  # 是否发送正文图文伪装合并转发
+  contentForwardEnabled: true
+  # 视频消息发送失败时是否提示原链接/失败原因
+  videoFailureFallbackEnabled: true
+
+# 媒体策略
+media:
+  # 是否按资源键去重图片
+  dedupeImages: true
+  # 是否过滤缩略图、模糊图、马赛克图等低质量图片
+  filterLowQualityImages: true
+  # 是否尝试将预览卡封面内联，减少防盗链缺图
+  inlinePreviewCover: true
+
+# 诊断日志
+diagnostics:
+  # 是否输出 resolver 阶段日志
+  stageLogsEnabled: true
+  # 是否输出成功阶段的 debug 日志；关闭后仍保留失败 warn
+  verboseLogsEnabled: true
+
 # B站原生解析设置
 bilibili:
   # B站下载上限，单位秒；WebUI 中按分钟填写；0 表示不限制

@@ -6,6 +6,7 @@ import { fetchJson } from '@/services/http'
 import type { ResolverConfig } from '@/types/config'
 
 import { isLikelyVideoUrl, resolveByGeneralApis } from './general'
+import { logResolverStage } from './resolverLog'
 import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
@@ -282,6 +283,14 @@ const downloadDouyinVideos = async (result: ResolvedPost, headers: Record<string
       }
     } catch {
       failedDownloads += 1
+      logResolverStage({
+        platform: 'douyin',
+        stage: 'media',
+        ok: false,
+        reason: 'video download failed',
+        url: videoUrl,
+        extra: { fallback: 'cover-link-only' }
+      })
     }
   }
 
@@ -290,6 +299,14 @@ const downloadDouyinVideos = async (result: ResolvedPost, headers: Record<string
   const downloadMessage = videos.length > 0
     ? '部分视频下载失败，已跳过不可用视频。'
     : '视频下载失败，已仅返回作品信息。'
+
+  logResolverStage({
+    platform: 'douyin',
+    stage: 'fallback',
+    ok: true,
+    url: result.pageUrl,
+    extra: { source: videos.length > 0 ? 'partial-video-download' : 'cover-link-only' }
+  })
 
   return {
     ...result,
@@ -325,11 +342,42 @@ export const resolveDouyin = async (
         quality: normalizeQuality(douyinConfig?.quality),
         maxVideoDurationSeconds: douyinConfig?.maxVideoDurationSeconds ?? Config.resolver.maxVideoDurationSeconds
       })
-      if (!('ok' in result)) return downloadDouyinVideos(result, headers)
-    } catch {
+      if (!('ok' in result)) {
+        logResolverStage({
+          platform: 'douyin',
+          stage: 'api',
+          ok: true,
+          url: finalUrl,
+          extra: { source: 'web-detail' }
+        })
+        return downloadDouyinVideos(result, headers)
+      }
+      logResolverStage({
+        platform: 'douyin',
+        stage: 'normalize',
+        ok: false,
+        reason: result.reason,
+        url: finalUrl
+      })
+    } catch (error) {
+      logResolverStage({
+        platform: 'douyin',
+        stage: 'api',
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+        url: finalUrl,
+        extra: { fallback: 'general-api' }
+      })
       // Fall back to configured general APIs.
     }
   }
 
+  logResolverStage({
+    platform: 'douyin',
+    stage: 'fallback',
+    ok: true,
+    url: finalUrl,
+    extra: { source: 'general-api' }
+  })
   return resolveByGeneralApis('抖音', finalUrl, generalApis)
 }

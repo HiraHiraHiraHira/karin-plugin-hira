@@ -29,6 +29,16 @@ describe('createWebConfigComponents', () => {
     expect(serialized).toContain('appEnabled')
     expect(serialized).toContain('musicDefaultSource')
     expect(serialized).toContain('resolverKkkCompat')
+    expect(serialized).toContain('resolverPlatformBilibili')
+    expect(serialized).toContain('resolverPlatformXiaohongshu')
+    expect(serialized).toContain('resolverSendingContentForwardEnabled')
+    expect(serialized).toContain('resolverSendingVideoFailureFallbackEnabled')
+    expect(serialized).toContain('resolverMediaDedupeImages')
+    expect(serialized).toContain('resolverMediaFilterLowQualityImages')
+    expect(serialized).toContain('resolverMediaInlinePreviewCover')
+    expect(serialized).toContain('resolverDiagnosticsStageLogsEnabled')
+    expect(serialized).toContain('resolverDiagnosticsVerboseLogsEnabled')
+    expect(serialized).toContain('resolverMaxVideoDurationMinutes')
     expect(serialized).toContain('resolverBilibiliMaxVideoDurationMinutes')
     expect(serialized).toContain('resolverBilibiliQuality')
     expect(serialized).toContain('resolverBilibiliCodec')
@@ -74,6 +84,22 @@ describe('createWebConfigComponents', () => {
       'musicEnabled',
       'resolverEnabled',
       'resolverKkkCompat',
+      'resolverCommentsEnabled',
+      'resolverPlatformBilibili',
+      'resolverPlatformDouyin',
+      'resolverPlatformKuaishou',
+      'resolverPlatformWeibo',
+      'resolverPlatformTieba',
+      'resolverPlatformXiaoheihe',
+      'resolverPlatformXiaohongshu',
+      'resolverPlatformGeneral',
+      'resolverSendingContentForwardEnabled',
+      'resolverSendingVideoFailureFallbackEnabled',
+      'resolverMediaDedupeImages',
+      'resolverMediaFilterLowQualityImages',
+      'resolverMediaInlinePreviewCover',
+      'resolverDiagnosticsStageLogsEnabled',
+      'resolverDiagnosticsVerboseLogsEnabled',
       'runtimeCleanupEnabled',
       'lightEnabled',
       'translateEnabled',
@@ -127,6 +153,11 @@ describe('createWebConfigComponents', () => {
     expect(findComponent('resolverPriority')).toMatchObject({
       defaultValue: '900',
       rules: [{ min: 0, max: 9999 }]
+    })
+    expect(findComponent('resolverMaxVideoDurationMinutes')).toMatchObject({
+      label: '通用视频上限分钟',
+      defaultValue: '8',
+      rules: [{ min: 0, max: 360 }]
     })
     expect(findComponent('resolverBilibiliMaxVideoDurationMinutes')).toMatchObject({
       label: 'B站下载上限分钟',

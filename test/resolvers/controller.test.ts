@@ -44,6 +44,7 @@ describe('handleResolverMessage', () => {
     karinMocks.render.mockResolvedValue(Buffer.from('resolver-error-card').toString('base64'))
     const { Config } = await import('@/config')
     Config.resolver.kkkCompat = true
+    Config.resolver.platforms.bilibili = true
   })
 
   it('turns resolver exceptions such as ffmpeg failures into diagnostic card replies', async () => {
@@ -95,6 +96,24 @@ describe('handleResolverMessage', () => {
     expect(reply).toHaveBeenCalledWith([
       { type: 'image', file: `base64://${Buffer.from('resolver-error-card').toString('base64')}` }
     ])
+  })
+
+  it('passes disabled resolver platforms to the next handler without resolving', async () => {
+    const { handleResolverMessage } = await import('@/resolvers/controller')
+    const { Config } = await import('@/config')
+    Config.resolver.kkkCompat = false
+    Config.resolver.platforms.bilibili = false
+    const next = vi.fn(() => 'next-handler')
+    const e = {
+      msg: 'https://www.bilibili.com/video/BV14A31eZEH8',
+      reply: vi.fn()
+    } as unknown as Message
+
+    await expect(handleResolverMessage(e, next)).resolves.toBe('next-handler')
+
+    expect(next).toHaveBeenCalled()
+    expect(resolverMocks.resolveBilibili).not.toHaveBeenCalled()
+    expect(karinMocks.render).not.toHaveBeenCalled()
   })
 
   it('passes QQ news metadata to Tieba resolver for share-card fallback', async () => {

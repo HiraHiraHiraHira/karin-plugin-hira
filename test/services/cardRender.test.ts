@@ -161,7 +161,7 @@ describe('cardRender', () => {
       }
     })
 
-    expect(html).toContain('xhh-preview-shell')
+    expect(html).toContain('resolver-preview-shell')
     expect(html).toContain('小黑盒帖子')
     expect(html).toContain('图文混排帖子')
     expect(html).toContain('Hira')
@@ -219,7 +219,7 @@ describe('cardRender', () => {
       }
     })
 
-    expect(html).toContain('xhh-preview-shell')
+    expect(html).toContain('resolver-preview-shell')
     expect(html).toContain('小红书笔记')
     expect(html).toContain('周末咖啡路线')
     expect(html).toContain('Hira')
@@ -233,6 +233,78 @@ describe('cardRender', () => {
     expect(html).not.toContain('RESOLVE')
     expect(html).not.toContain('resolver-metrics')
     expect(html).not.toContain('https://www.xiaohongshu.com/explore/abc123')
+  })
+
+  it('uses one shared light resolver preview skeleton for Xiaoheihe, Xiaohongshu, Weibo, and Tieba', () => {
+    const platforms = [
+      ['xiaoheihe', '小黑盒帖子'],
+      ['xiaohongshu', '小红书笔记'],
+      ['weibo', '微博'],
+      ['tieba', '贴吧']
+    ] as const
+
+    for (const [platform, displayName] of platforms) {
+      const html = buildResolverPreviewCardHtml({
+        platform,
+        displayName,
+        title: `${displayName}标题`,
+        description: `${displayName}摘要`,
+        author: '作者',
+        pageUrl: `https://example.test/${platform}`,
+        images: ['https://img/cover.jpg'],
+        videos: [],
+        extras: {
+          coverUrl: 'https://img/cover.jpg',
+          tags: ['tag']
+        }
+      })
+
+      expect(html).toContain('resolver-preview-shell')
+      expect(html).toContain(`data-platform="${platform}"`)
+      expect(html).toContain('resolver-preview-cover')
+      expect(html).toContain(`${displayName}标题`)
+      expect(html).toContain(`${displayName}摘要`)
+      expect(html).toContain('#tag')
+      expect(html).toContain('box-shadow: none;')
+      expect(html).not.toContain('RESOLVE')
+      expect(html).not.toContain('resolver-metrics')
+      expect(html).not.toContain(`https://example.test/${platform}`)
+    }
+  })
+
+  it('skips blurred or mosaic preview covers and hides the cover area when no usable image exists', () => {
+    const html = buildResolverPreviewCardHtml({
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '标题',
+      description: '摘要',
+      images: [
+        'https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50',
+        'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp'
+      ],
+      videos: [],
+      extras: {
+        coverUrl: 'https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50'
+      }
+    })
+
+    expect(html).toContain('https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp')
+    expect(html).not.toContain('https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50')
+
+    const noCoverHtml = buildResolverPreviewCardHtml({
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '标题',
+      description: '摘要',
+      images: ['https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50'],
+      videos: [],
+      extras: {
+        coverUrl: 'https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50'
+      }
+    })
+
+    expect(noCoverHtml).toContain('resolver-preview-main-no-cover')
+    expect(noCoverHtml).not.toContain('<img class="resolver-preview-cover"')
   })
 
   it('builds an error diagnostic card without leaking raw html', () => {

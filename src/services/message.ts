@@ -1,24 +1,30 @@
 import * as fs from 'node:fs'
 import path from 'node:path'
 
-import type { CustomNodeElement, Elements, Message, SendElement } from 'node-karin'
+import type { Message } from 'node-karin'
 import { common, segment } from 'node-karin'
 
 import { Config } from '@/config'
 import { formatArtists } from '@/music/providers/helpers'
+import { dedupeImageUrls, imageQuality, isUsableImageUrl } from '@/resolvers/media'
 import type { MusicItem, MusicPlayable } from '@/music/types'
-import type { ResolvedPost, ResolverFailure, ResolverResult, RichCommentBlock, RichContentBlock } from '@/resolvers/types'
+import type { ResolvedPost, ResolverFailure, ResolverResult } from '@/resolvers/types'
 import {
   buildErrorCardHtml,
   buildMusicListCardHtml,
   buildResolverCardHtml,
   buildResolverPreviewCardHtml,
-  buildXiaohongshuPreviewCardHtml,
-  buildXiaoheihePreviewCardHtml,
   logCardRenderFailure,
   renderCardImage
 } from '@/services/cardRender'
 import { inlinePreviewCover } from '@/services/previewCover'
+import {
+  buildResolverCommentNodes,
+  buildResolverContentNodes,
+  canSendResolverForward,
+  resolverForwardCopy,
+  sendResolverForward
+} from '@/services/resolverForward'
 
 type ReplyPayload = Parameters<Message['reply']>[0]
 
@@ -96,7 +102,7 @@ const uploadVideoFile = async (e: Message, file: string, size?: number) => {
   }
 }
 
-const replyVideo = async (e: Message, file: string) => {
+const replyVideo = async (e: Message, file: string, pageUrl?: string) => {
   const size = getLocalFileSize(file)
   if (size && size > videoMessageLimitBytes) {
     await uploadVideoFile(e, file, size)
@@ -110,7 +116,9 @@ const replyVideo = async (e: Message, file: string) => {
       await uploadVideoFile(e, file, size)
       return
     }
-    await replyText(e, `视频发送失败：${error instanceof Error ? error.message : String(error)}`)
+    if (Config.resolver.sending.videoFailureFallbackEnabled !== false) {
+      await replyText(e, `视频发送失败：${error instanceof Error ? error.message : String(error)}${pageUrl ? `\n原链接：${pageUrl}` : ''}`)
+    }
   }
 }
 
@@ -209,44 +217,37 @@ const botForwardIdentity = (e: Message, fallbackName: string) => {
   }
 }
 
-const eventForwardIdentity = (e: Message, fallbackName: string) => {
-  const event = e as unknown as {
-    userId?: string | number
-    user_id?: string | number
-    sender?: {
-      userId?: string | number
-      user_id?: string | number
-      card?: string
-      nickname?: string
-    }
-  }
-  const id = event.sender?.userId || event.sender?.user_id || event.userId || event.user_id || e.selfId || ''
-  const name = event.sender?.card || event.sender?.nickname || (id ? String(id) : fallbackName)
-  return {
-    id: String(id),
-    name
-  }
-}
-
-const fakeForwardNode = (message: SendElement[], userId: string, nickname: string): CustomNodeElement => ({
-  type: 'node',
-  subType: 'fake',
-  userId,
-  nickname,
-  message
-})
-
-const canSendForward = (e: Message) => typeof (e.bot as unknown as { sendForwardMsg?: unknown }).sendForwardMsg === 'function'
+const canSendForward = canSendResolverForward
 
 const resolvedPostText = (post: ResolvedPost) => {
   const title = post.title ? `，${post.title}` : ''
   return `识别：${post.displayName}${title}${post.description ? `\n${post.description}` : ''}${post.pageUrl ? `\n${post.pageUrl}` : ''}`
 }
 
+const resolverImageUrls = (images: string[]) => {
+  const media = Config.resolver.media
+  if (media.dedupeImages !== false) {
+    return dedupeImageUrls(images, {
+      filterLowQuality: media.filterLowQualityImages !== false
+    })
+  }
+
+  const urls = images.map(url => url.trim()).filter(Boolean)
+  if (media.filterLowQualityImages === false) return urls
+  const usable = urls.filter(isUsableImageUrl)
+  if (usable.length > 0) return usable
+  return urls.filter(url => imageQuality(url) !== 'blurred')
+}
+
+const resolverImageDedupeOptions = () => ({
+  dedupe: Config.resolver.media.dedupeImages !== false,
+  filterLowQuality: Config.resolver.media.filterLowQualityImages !== false
+})
+
 const directResolvedPost = async (e: Message, post: ResolvedPost, text: string) => {
   const elements = [
     segment.text(text),
-    ...post.images.slice(0, 9).map(url => segment.image(url))
+    ...resolverImageUrls(post.images).slice(0, 9).map(url => segment.image(url))
   ]
   await e.reply(elements as ReplyPayload)
 }
@@ -260,7 +261,7 @@ const cardResolvedPost = async (e: Message, post: ResolvedPost, text: string) =>
     })
     const elements = [
       ...images,
-      ...post.images.slice(0, 9).map(url => segment.image(url))
+      ...resolverImageUrls(post.images).slice(0, 9).map(url => segment.image(url))
     ]
     await e.reply(elements as ReplyPayload)
   } catch (error) {
@@ -269,48 +270,20 @@ const cardResolvedPost = async (e: Message, post: ResolvedPost, text: string) =>
   }
 }
 
-const xiaoheihePreviewCardPost = async (e: Message, post: ResolvedPost, text: string) => {
-  try {
-    const images = await renderCardImage({
-      name: 'resolver-xiaoheihe-preview',
-      html: buildXiaoheihePreviewCardHtml(post, { commentsEnabled: resolverCommentsEnabled() }),
-      width: 920
-    })
-    await e.reply(images as ReplyPayload)
-  } catch (error) {
-    logCardRenderFailure('resolver-xiaoheihe-preview', error)
-    await directResolvedPost(e, post, text)
-  }
-}
-
-const xiaohongshuPreviewCardPost = async (e: Message, post: ResolvedPost, text: string) => {
-  try {
-    const images = await renderCardImage({
-      name: 'resolver-xiaohongshu-preview',
-      html: buildXiaohongshuPreviewCardHtml(post, { commentsEnabled: resolverCommentsEnabled() }),
-      width: 920
-    })
-    await e.reply(images as ReplyPayload)
-  } catch (error) {
-    logCardRenderFailure('resolver-xiaohongshu-preview', error)
-    await directResolvedPost(e, post, text)
-  }
-}
-
 const richResolverPreviewCopy = (post: ResolvedPost) => {
+  if (post.platform === 'bilibili') return '已识别B站视频，简介和视频将随后发送。'
+  if (post.platform === 'kuaishou') return '已识别快手作品，完整内容将随后发送。'
   if (post.platform === 'xiaoheihe') return '已识别小黑盒分享，完整内容将随后发送。'
   if (post.platform === 'xiaohongshu') return '已识别小红书笔记，完整图文将随后发送。'
   if (post.platform === 'weibo') return '已识别微博分享，正文和评论将随后发送。'
   if (post.platform === 'tieba') return '已识别贴吧帖子，正文和回复将随后发送。'
+  if (post.platform === 'general') return '已识别通用解析结果，内容将随后发送。'
   return `已识别${post.displayName}分享，完整内容将随后发送。`
 }
 
 const resolverPreviewCardPost = async (e: Message, post: ResolvedPost, text: string) => {
-  if (post.platform === 'xiaoheihe') return xiaoheihePreviewCardPost(e, post, text)
-  if (post.platform === 'xiaohongshu') return xiaohongshuPreviewCardPost(e, post, text)
-
   try {
-    const renderPost = await inlinePreviewCover(post)
+    const renderPost = Config.resolver.media.inlinePreviewCover === false ? post : await inlinePreviewCover(post)
     const images = await renderCardImage({
       name: `resolver-${post.platform}-preview`,
       html: buildResolverPreviewCardHtml(renderPost, richResolverPreviewCopy(renderPost), {
@@ -329,7 +302,7 @@ const replyResolvedPostForward = async (e: Message, post: ResolvedPost, text: st
   const identity = botForwardIdentity(e, `${post.displayName}解析`)
   const nodes = common.makeForward([
     segment.text(text),
-    ...post.images.map(url => segment.image(url))
+    ...resolverImageUrls(post.images).map(url => segment.image(url))
   ], identity.id, identity.name)
   const isLongText = (post.description?.length || 0) > resolverLongTextLength
   const summary = post.images.length > 1
@@ -346,59 +319,20 @@ const replyResolvedPostForward = async (e: Message, post: ResolvedPost, text: st
   })
 }
 
-const richResolverPlatforms = new Set(['xiaoheihe', 'xiaohongshu', 'weibo', 'tieba'])
+const richResolverPlatforms = new Set<ResolvedPost['platform']>([
+  'bilibili',
+  'kuaishou',
+  'xiaoheihe',
+  'xiaohongshu',
+  'weibo',
+  'tieba',
+  'general'
+])
 
 const hasRichResolverExtras = (post: ResolvedPost) => (
   richResolverPlatforms.has(post.platform) &&
   Boolean(post.extras?.contentBlocks?.length || (resolverCommentsEnabled() && post.extras?.commentBlocks?.length))
 )
-
-const richContentElements = (blocks: RichContentBlock[]) => blocks.map(block => (
-  block.type === 'text' ? segment.text(block.text) : segment.image(block.url)
-))
-
-const formatCommentBlock = (comment: RichCommentBlock) => {
-  const header = comment.replyTo ? `${comment.author} 回复 ${comment.replyTo}` : comment.author
-  const meta = [
-    typeof comment.floor === 'number' ? `${comment.floor}楼` : undefined,
-    comment.location,
-    comment.time
-  ].filter(Boolean).join(' · ')
-  return [header, meta, '', comment.text].filter((line, index) => line || index === 2).join('\n')
-}
-
-const replyXiaoheiheRichForward = async (
-  e: Message,
-  post: ResolvedPost,
-  nodes: CustomNodeElement[],
-  prompt: string,
-  summary: string
-) => {
-  await e.bot.sendForwardMsg(e.contact, nodes, {
-    source: post.displayName,
-    summary,
-    prompt,
-    news: [{ text: '点击查看完整内容' }]
-  })
-}
-
-const xiaoheiheContentNodes = (e: Message, post: ResolvedPost, blocks: RichContentBlock[]) => {
-  const identity = eventForwardIdentity(e, post.displayName)
-  return [fakeForwardNode(richContentElements(blocks), identity.id, identity.name)]
-}
-
-const xiaoheiheCommentNodes = (comments: RichCommentBlock[]) => comments.map(comment => fakeForwardNode([
-  segment.text(formatCommentBlock(comment)),
-  ...comment.images.map(url => segment.image(url))
-], '1', comment.author))
-
-const richResolverForwardCopy = (post: ResolvedPost) => {
-  if (post.platform === 'xiaoheihe') return { contentPrompt: '小黑盒帖子正文', commentPrompt: '小黑盒帖子评论', commentUnit: '评论' }
-  if (post.platform === 'xiaohongshu') return { contentPrompt: '小红书笔记正文', commentPrompt: '小红书笔记评论', commentUnit: '评论' }
-  if (post.platform === 'weibo') return { contentPrompt: '微博正文', commentPrompt: '微博评论', commentUnit: '评论' }
-  if (post.platform === 'tieba') return { contentPrompt: '贴吧帖子正文', commentPrompt: '贴吧回复', commentUnit: '回复' }
-  return { contentPrompt: `${post.displayName}正文`, commentPrompt: `${post.displayName}评论`, commentUnit: '评论' }
-}
 
 const replyRichResolverPost = async (e: Message, post: ResolvedPost, text: string) => {
   await resolverPreviewCardPost(e, post, text)
@@ -408,15 +342,15 @@ const replyRichResolverPost = async (e: Message, post: ResolvedPost, text: strin
   }
 
   try {
-    const copy = richResolverForwardCopy(post)
+    const copy = resolverForwardCopy(post)
     const contentBlocks = post.extras?.contentBlocks || []
-    if (contentBlocks.length > 0) {
-      await replyXiaoheiheRichForward(e, post, xiaoheiheContentNodes(e, post, contentBlocks), copy.contentPrompt, '查看完整图文')
+    if (Config.resolver.sending.contentForwardEnabled !== false && contentBlocks.length > 0) {
+      await sendResolverForward(e, post, buildResolverContentNodes(e, post, contentBlocks, resolverImageDedupeOptions()), copy.contentPrompt, '查看完整图文')
     }
 
     const commentBlocks = resolverCommentsEnabled() ? post.extras?.commentBlocks || [] : []
     if (commentBlocks.length > 0) {
-      await replyXiaoheiheRichForward(e, post, xiaoheiheCommentNodes(commentBlocks), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
+      await sendResolverForward(e, post, buildResolverCommentNodes(commentBlocks), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
     }
   } catch {
     await directResolvedPost(e, post, text)
@@ -450,7 +384,7 @@ export const replyResolvedPost = async (e: Message, result: ResolverResult) => {
   if (hasRichResolverExtras(post)) {
     await replyRichResolverPost(e, post, text)
     const video = post.videos[0]
-    if (video) await replyVideo(e, video)
+    if (video) await replyVideo(e, video, post.pageUrl)
     return
   }
 
@@ -467,5 +401,5 @@ export const replyResolvedPost = async (e: Message, result: ResolverResult) => {
   }
 
   const video = post.videos[0]
-  if (video) await replyVideo(e, video)
+  if (video) await replyVideo(e, video, post.pageUrl)
 }

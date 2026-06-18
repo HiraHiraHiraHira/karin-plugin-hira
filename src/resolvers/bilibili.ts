@@ -5,7 +5,7 @@ import { createTempFilePath } from '@/runtime/temp'
 import { fetchJson } from '@/services/http'
 import type { ResolverConfig } from '@/types/config'
 
-import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
+import type { ResolvedPost, ResolverFailure, ResolverResult, RichContentBlock } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
   platform: 'bilibili',
@@ -150,8 +150,17 @@ export const normalizeBilibiliVideoInfo = (pageUrl: string, payload: unknown): R
   if (Number(root?.code) !== 0 || !data) return failure(String(root?.message || 'B站接口返回异常'))
 
   const stat = asObject(data.stat)
+  const desc = String(data.desc || '').trim()
+  const coverUrl = typeof data.pic === 'string' && data.pic.trim() ? data.pic.trim() : undefined
+  const owner = asObject(data.owner)
+  const authorAvatar = typeof owner?.face === 'string' && owner.face.trim() ? owner.face.trim() : undefined
+  const tag = typeof data.tname === 'string' && data.tname.trim() ? data.tname.trim() : undefined
+  const contentBlocks: RichContentBlock[] = [
+    desc ? { type: 'text', text: desc } : undefined,
+    coverUrl ? { type: 'image', url: coverUrl } : undefined
+  ].filter((item): item is RichContentBlock => Boolean(item))
   const description = [
-    data.desc,
+    desc,
     stat
       ? [
           formatStat('播放', stat.view),
@@ -168,10 +177,17 @@ export const normalizeBilibiliVideoInfo = (pageUrl: string, payload: unknown): R
     displayName: '哔哩哔哩',
     title: String(data.title || 'B站视频'),
     description,
-    author: data.owner?.name,
+    author: typeof owner?.name === 'string' ? owner.name : undefined,
     pageUrl: bvid ? `https://www.bilibili.com/video/${bvid}` : pageUrl,
     videos: [],
-    images: data.pic ? [String(data.pic)] : []
+    images: coverUrl ? [coverUrl] : [],
+    extras: {
+      coverUrl,
+      authorAvatar,
+      tags: tag ? [tag] : [],
+      contentBlocks,
+      ...(data.pubdate ? { createdAt: data.pubdate } : {})
+    }
   }
 }
 

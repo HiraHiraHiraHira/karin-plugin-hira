@@ -35,6 +35,29 @@ export type ResolverConfig = {
   commentsEnabled: boolean
   priority: number
   maxVideoDurationSeconds: number
+  platforms: {
+    bilibili: boolean
+    douyin: boolean
+    kuaishou: boolean
+    weibo: boolean
+    tieba: boolean
+    xiaoheihe: boolean
+    xiaohongshu: boolean
+    general: boolean
+  }
+  sending: {
+    contentForwardEnabled: boolean
+    videoFailureFallbackEnabled: boolean
+  }
+  media: {
+    dedupeImages: boolean
+    filterLowQualityImages: boolean
+    inlinePreviewCover: boolean
+  }
+  diagnostics: {
+    stageLogsEnabled: boolean
+    verboseLogsEnabled: boolean
+  }
   bilibili: {
     maxVideoDurationSeconds: number
     quality: number

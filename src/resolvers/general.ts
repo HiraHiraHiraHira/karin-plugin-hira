@@ -1,9 +1,16 @@
-import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
+import { dedupeImageUrls } from './media'
+import type { ResolvedPost, ResolverFailure, ResolverPlatform, ResolverResult, RichContentBlock } from './types'
 
 type UnknownObject = Record<string, unknown>
+export type GeneralNormalizeOptions = {
+  platform?: ResolverPlatform
+  pageUrl?: string
+}
 
-const failure = (displayName: string, reason: string): ResolverFailure => ({
-  platform: 'general',
+type GeneralFetchJson = (url: string) => Promise<unknown>
+
+const failure = (displayName: string, reason: string, platform: ResolverPlatform = 'general'): ResolverFailure => ({
+  platform,
   displayName,
   ok: false,
   reason
@@ -13,10 +20,42 @@ const asObject = (value: unknown): UnknownObject | undefined => {
   return typeof value === 'object' && value !== null ? value as UnknownObject : undefined
 }
 
-const asStringArray = (value: unknown): string[] => {
-  if (typeof value === 'string' && value.trim()) return [value]
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+const stringValues = (value: unknown): string[] => {
+  if (typeof value === 'string' && value.trim()) return [value.trim()]
+  if (Array.isArray(value)) return value.flatMap(stringValues)
+
+  const item = asObject(value)
+  if (!item) return []
+  return [
+    item.url,
+    item.src,
+    item.href,
+    item.playUrl,
+    item.play_url,
+    item.urlList,
+    item.url_list,
+    item.originUrl,
+    item.origin_url,
+    item.original,
+    item.large
+  ].flatMap(stringValues)
+}
+
+const firstString = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = stringValues(value)[0]
+    if (text) return text
+  }
+  return undefined
+}
+
+const uniqueStrings = (values: string[]) => {
+  const seen = new Set<string>()
+  return values.filter(value => {
+    if (seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
 }
 
 export const isLikelyVideoUrl = (url: string) => {
@@ -28,52 +67,129 @@ export const isLikelyVideoUrl = (url: string) => {
   )
 }
 
-export const normalizeGeneralApiResponse = (displayName: string, payload: unknown): ResolvedPost | ResolverFailure => {
+export const normalizeGeneralApiResponse = (
+  displayName: string,
+  payload: unknown,
+  options: GeneralNormalizeOptions = {}
+): ResolvedPost | ResolverFailure => {
+  const platform = options.platform || 'general'
   const root = asObject(payload)
-  if (!root) return failure(displayName, 'empty response')
+  if (!root) return failure(displayName, 'empty response', platform)
 
   const code = root.code
-  if ([-2, -1, 400, 404, 500].includes(Number(code))) return failure(displayName, `api failed: ${String(code)}`)
+  if ([-2, -1, 400, 404, 500].includes(Number(code))) return failure(displayName, `api failed: ${String(code)}`, platform)
 
   const data = asObject(root.data)
-  if (!data) return failure(displayName, 'empty data')
+  if (!data) return failure(displayName, 'empty data', platform)
 
-  const videos = asStringArray(data.url).concat(asStringArray(data.playAddr)).filter(isLikelyVideoUrl)
-  const images = asStringArray(data.images)
-    .concat(asStringArray(data.imageUrl))
-    .concat(asStringArray(data.pics))
-    .concat(asStringArray(data.imgurl))
+  const authorObject = asObject(data.author)
+  const userObject = asObject(data.user)
+  const title = firstString(data.title, data.name)
+  const description = firstString(data.desc, data.description, data.content, data.text, data.summary)
+  const author = firstString(
+    data.author,
+    authorObject?.name,
+    authorObject?.nickname,
+    data.authorName,
+    data.author_name,
+    data.nickname,
+    data.userName,
+    data.user_name,
+    userObject?.name,
+    userObject?.nickname
+  )
+  const authorAvatar = firstString(
+    data.avatar,
+    data.authorAvatar,
+    data.author_avatar,
+    authorObject?.avatar,
+    authorObject?.face,
+    userObject?.avatar,
+    userObject?.face
+  )
 
-  if (videos.length === 0 && images.length === 0) return failure(displayName, 'no media found')
+  const coverCandidates = [
+    data.cover,
+    data.coverUrl,
+    data.cover_url,
+    data.pic,
+    data.picture,
+    data.thumbnail,
+    data.thumb
+  ].flatMap(stringValues)
+  const rawImages = coverCandidates.concat(
+    stringValues(data.images),
+    stringValues(data.imageUrl),
+    stringValues(data.image_url),
+    stringValues(data.pics),
+    stringValues(data.picUrls),
+    stringValues(data.pic_urls),
+    stringValues(data.imgurl)
+  )
+  const images = dedupeImageUrls(rawImages)
+  const coverUrl = dedupeImageUrls(coverCandidates)[0] || images[0]
+  const videos = uniqueStrings([
+    ...stringValues(data.url),
+    ...stringValues(data.playAddr),
+    ...stringValues(data.play_addr),
+    ...stringValues(data.videoUrl),
+    ...stringValues(data.video_url),
+    ...stringValues(data.video)
+  ]).filter(isLikelyVideoUrl)
+
+  if (videos.length === 0 && images.length === 0) return failure(displayName, 'no media found', platform)
+
+  const contentText = description || title
+  const contentBlocks: RichContentBlock[] = [
+    contentText ? { type: 'text', text: contentText } : undefined,
+    ...images.map(url => ({ type: 'image' as const, url }))
+  ].filter((item): item is RichContentBlock => Boolean(item))
 
   return {
-    platform: 'general',
+    platform,
     displayName,
-    title: String(data.title || data.desc || ''),
+    title: title || description || displayName,
+    description,
+    author,
+    pageUrl: options.pageUrl,
     videos,
-    images
+    images,
+    extras: {
+      coverUrl,
+      ...(authorAvatar ? { authorAvatar } : {}),
+      contentBlocks
+    }
   }
 }
+
+const defaultFetchJson: GeneralFetchJson = async requestUrl => {
+  const response = await fetch(requestUrl)
+  return response.json()
+}
+
+const isFetchJson = (value: GeneralNormalizeOptions | GeneralFetchJson | undefined): value is GeneralFetchJson => (
+  typeof value === 'function'
+)
 
 export const resolveByGeneralApis = async (
   displayName: string,
   url: string,
   apiTemplates: string[],
-  fetchJson: (url: string) => Promise<unknown> = async requestUrl => {
-    const response = await fetch(requestUrl)
-    return response.json()
-  }
+  optionsOrFetchJson: GeneralNormalizeOptions | GeneralFetchJson = {},
+  fetchJsonOverride?: GeneralFetchJson
 ): Promise<ResolverResult> => {
-  let lastFailure: ResolverFailure = failure(displayName, 'no api configured')
+  const options = isFetchJson(optionsOrFetchJson) ? {} : optionsOrFetchJson
+  const fetchJson = isFetchJson(optionsOrFetchJson) ? optionsOrFetchJson : fetchJsonOverride || defaultFetchJson
+  let lastFailure: ResolverFailure = failure(displayName, 'no api configured', options.platform)
 
   for (const template of apiTemplates) {
     const requestUrl = template.replace('{url}', encodeURIComponent(url))
     try {
-      const result = normalizeGeneralApiResponse(displayName, await fetchJson(requestUrl))
+      const result = normalizeGeneralApiResponse(displayName, await fetchJson(requestUrl), options)
       if (!('ok' in result)) return result
       lastFailure = result
     } catch (error) {
-      lastFailure = failure(displayName, error instanceof Error ? error.message : String(error))
+      lastFailure = failure(displayName, error instanceof Error ? error.message : String(error), options.platform)
     }
   }
 

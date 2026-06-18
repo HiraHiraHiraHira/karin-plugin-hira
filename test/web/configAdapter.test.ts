@@ -49,6 +49,16 @@ describe('web config adapter', () => {
           resolverPriority: '950',
           resolverKkkCompat: false,
           resolverCommentsEnabled: false,
+          resolverMaxVideoDurationMinutes: '12',
+          resolverPlatformBilibili: false,
+          resolverPlatformDouyin: true,
+          resolverSendingContentForwardEnabled: false,
+          resolverSendingVideoFailureFallbackEnabled: false,
+          resolverMediaDedupeImages: false,
+          resolverMediaFilterLowQualityImages: false,
+          resolverMediaInlinePreviewCover: false,
+          resolverDiagnosticsStageLogsEnabled: false,
+          resolverDiagnosticsVerboseLogsEnabled: false,
           resolverBilibiliMaxVideoDurationMinutes: '20',
           resolverBilibiliQuality: '80',
           resolverBilibiliCodec: 'avc',
@@ -66,6 +76,24 @@ describe('web config adapter', () => {
         priority: '950',
         kkkCompat: false,
         commentsEnabled: false,
+        maxVideoDurationSeconds: 720,
+        platforms: {
+          bilibili: false,
+          douyin: true
+        },
+        sending: {
+          contentForwardEnabled: false,
+          videoFailureFallbackEnabled: false
+        },
+        media: {
+          dedupeImages: false,
+          filterLowQualityImages: false,
+          inlinePreviewCover: false
+        },
+        diagnostics: {
+          stageLogsEnabled: false,
+          verboseLogsEnabled: false
+        },
         bilibili: {
           maxVideoDurationSeconds: 1200,
           quality: '80',

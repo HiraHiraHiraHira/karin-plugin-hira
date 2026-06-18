@@ -45,6 +45,11 @@ describe('replyResolvedPost', () => {
     karinMocks.render.mockReset()
     karinMocks.render.mockResolvedValue(Buffer.from('music-card').toString('base64'))
     defaultConfig.resolver.commentsEnabled = true
+    defaultConfig.resolver.sending.contentForwardEnabled = true
+    defaultConfig.resolver.sending.videoFailureFallbackEnabled = true
+    defaultConfig.resolver.media.dedupeImages = true
+    defaultConfig.resolver.media.filterLowQualityImages = true
+    defaultConfig.resolver.media.inlinePreviewCover = true
   })
 
   it('sends local videos with a file protocol like KKK', async () => {
@@ -260,6 +265,166 @@ describe('replyResolvedPost', () => {
     ])
     const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
     expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/xhs.mp4' })
+  })
+
+  it('deduplicates repeated rich content images before sending fake forwards', async () => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '单图标题',
+      description: '单图简介',
+      pageUrl: 'https://www.xiaohongshu.com/explore/123',
+      images: [
+        'https://img/a.jpg?imageView2/2/w/1080',
+        'https://img/a.jpg?imageView2/2/w/240'
+      ],
+      videos: [],
+      extras: {
+        coverUrl: 'https://img/a.jpg?imageView2/2/w/240',
+        contentBlocks: [
+          { type: 'text', text: '单图简介' },
+          { type: 'image', url: 'https://img/a.jpg?imageView2/2/w/1080' },
+          { type: 'image', url: 'https://img/a.jpg?imageView2/2/w/240' },
+          { type: 'image', url: 'https://img/a.jpg?imageMogr2/blur/50x50' }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    const forwardCalls = sendForwardMsg.mock.calls as unknown as Array<[unknown, Array<{
+      message?: Array<{ type?: string, text?: string, file?: string }>
+    }>, unknown]>
+    expect(forwardCalls[0]?.[1]?.[0]?.message).toEqual([
+      { type: 'text', text: '单图简介' },
+      { type: 'image', file: 'https://img/a.jpg?imageView2/2/w/1080' }
+    ])
+  })
+
+  it('falls back to readable text and deduplicated images when rich forwards fail', async () => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => {
+      throw new Error('forward offline')
+    })
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'tieba',
+      displayName: '贴吧',
+      title: '标题',
+      description: '正文摘要',
+      pageUrl: 'https://tieba.baidu.com/p/123',
+      images: [
+        'https://img/a.jpg?imageView2/2/w/1080',
+        'https://img/a.jpg?imageView2/2/w/240',
+        'https://img/b.jpg'
+      ],
+      videos: [],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '正文' },
+          { type: 'image', url: 'https://img/a.jpg?imageView2/2/w/1080' }
+        ],
+        commentBlocks: [
+          { author: '层主', text: '回复', images: [] }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    const calls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(calls[0]?.[0]).toEqual([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(calls[1]?.[0]).toEqual([
+      expect.objectContaining({ type: 'text', text: expect.stringContaining('识别：贴吧，标题') }),
+      { type: 'image', file: 'https://img/a.jpg?imageView2/2/w/1080' },
+      { type: 'image', file: 'https://img/b.jpg' }
+    ])
+  })
+
+  it('keeps Xiaohongshu cover and original link visible when video sending fails', async () => {
+    const reply = vi.fn(async (payload: unknown) => {
+      if (typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'video') {
+        throw new Error('remote video expired')
+      }
+      return {}
+    })
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '视频标题',
+      description: '视频正文',
+      pageUrl: 'https://www.xiaohongshu.com/explore/123',
+      images: ['https://img/cover.jpg'],
+      videos: ['https://video/xhs-expired.mp4'],
+      extras: {
+        coverUrl: 'https://img/cover.jpg',
+        contentBlocks: [
+          { type: 'text', text: '视频正文' }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    const calls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(calls[0]?.[0]).toEqual([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(calls.some(([payload]) => typeof payload === 'string'
+      && payload.includes('视频发送失败')
+      && payload.includes('https://www.xiaohongshu.com/explore/123'))).toBe(true)
   })
 
   it('sends Xiaoheihe rich posts as card first and forwards content and comments after it', async () => {
@@ -485,6 +650,50 @@ describe('replyResolvedPost', () => {
     )
   })
 
+  it('skips rich content forwards when content forwards are disabled', async () => {
+    defaultConfig.resolver.sending.contentForwardEnabled = false
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'xiaohongshu',
+      displayName: '小红书笔记',
+      title: '图集标题',
+      description: '正文摘要',
+      pageUrl: 'https://www.xiaohongshu.com/explore/123',
+      images: ['https://img/cover.jpg'],
+      videos: [],
+      extras: {
+        contentBlocks: [
+          { type: 'text', text: '正文第一段' },
+          { type: 'image', url: 'https://img/cover.jpg' }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).not.toHaveBeenCalled()
+  })
+
   it('sends Tieba rich posts with the shared preview card and fake forwards', async () => {
     const reply = vi.fn(async () => ({}))
     const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
@@ -551,6 +760,74 @@ describe('replyResolvedPost', () => {
     expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/tieba.mp4' })
   })
 
+  it.each([
+    { platform: 'bilibili', displayName: '哔哩哔哩', prompt: '哔哩哔哩正文' },
+    { platform: 'kuaishou', displayName: '快手', prompt: '快手正文' },
+    { platform: 'general', displayName: '通用解析', prompt: '通用解析正文' }
+  ] as const)('sends $displayName rich posts through the shared preview and fake forward path', async ({ platform, displayName, prompt }) => {
+    const reply = vi.fn(async () => ({}))
+    const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
+    const contact = { scene: 'group', peer: '887223378', name: '测试群' }
+    const e = {
+      reply,
+      contact,
+      user_id: '10001',
+      sender: {
+        user_id: '10001',
+        card: '发帖人昵称',
+        nickname: '用户昵称'
+      },
+      selfId: '3133320859',
+      bot: {
+        account: { selfId: '3133320859', name: 'Hira' },
+        sendForwardMsg
+      }
+    } as unknown as Message
+    const post: ResolvedPost = {
+      platform,
+      displayName,
+      title: '标题',
+      description: '正文摘要',
+      author: '作者',
+      pageUrl: `https://example.test/${platform}/1`,
+      images: ['https://img/cover.jpg'],
+      videos: [`https://video/${platform}.mp4`],
+      extras: {
+        coverUrl: 'https://img/cover.jpg',
+        authorAvatar: 'https://img/avatar.jpg',
+        tags: ['tag'],
+        contentBlocks: [
+          { type: 'text', text: '正文第一段' },
+          { type: 'image', url: 'https://img/cover.jpg' }
+        ]
+      }
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(reply).toHaveBeenCalledWith([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(sendForwardMsg).toHaveBeenCalledTimes(1)
+    expect(sendForwardMsg).toHaveBeenCalledWith(
+      contact,
+      expect.any(Array),
+      expect.objectContaining({
+        prompt,
+        summary: '查看完整图文'
+      })
+    )
+    const forwardCalls = sendForwardMsg.mock.calls as unknown as Array<[unknown, Array<{
+      message?: Array<{ type?: string, text?: string, file?: string }>
+    }>, unknown]>
+    expect(forwardCalls[0]?.[1]?.[0]?.message).toEqual([
+      { type: 'text', text: '正文第一段' },
+      { type: 'image', file: 'https://img/cover.jpg' }
+    ])
+    const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: `https://video/${platform}.mp4` })
+  })
+
   it('sends long resolver descriptions as a merged forward message', async () => {
     const reply = vi.fn(async () => ({}))
     const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
@@ -585,6 +862,31 @@ describe('replyResolvedPost', () => {
         summary: '查看完整解析内容'
       })
     )
+  })
+
+  it('can suppress video failure fallback text from resolver sending settings', async () => {
+    defaultConfig.resolver.sending.videoFailureFallbackEnabled = false
+    const reply = vi.fn(async (payload: unknown) => {
+      if (typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'video') {
+        throw new Error('remote video expired')
+      }
+      return {}
+    })
+    const e = { reply } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'general',
+      displayName: '通用解析',
+      title: '标题',
+      description: '简介',
+      pageUrl: 'https://example.test/post/1',
+      images: [],
+      videos: ['https://cdn.example.test/expired.mp4']
+    }
+
+    await replyResolvedPost(e, post)
+
+    const calls = reply.mock.calls as unknown as Array<[unknown]>
+    expect(calls.some(([payload]) => typeof payload === 'string' && payload.includes('视频发送失败'))).toBe(false)
   })
 
   it('uploads local group videos as files when they exceed the message size limit', async () => {

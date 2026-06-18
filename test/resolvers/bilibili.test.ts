@@ -63,12 +63,52 @@ describe('bilibili resolver helpers', () => {
       author: 'UP主',
       pageUrl: 'https://www.bilibili.com/video/BV14A31eZEH8',
       images: ['https://i0.hdslb.com/cover.jpg'],
-      videos: []
+      videos: [],
+      extras: {
+        coverUrl: 'https://i0.hdslb.com/cover.jpg',
+        authorAvatar: undefined,
+        tags: [],
+        contentBlocks: [
+          { type: 'text', text: '简介' },
+          { type: 'image', url: 'https://i0.hdslb.com/cover.jpg' }
+        ]
+      }
     })
     expect('ok' in result).toBe(false)
     if ('ok' in result) throw new Error('expected successful result')
     expect(result.description).toContain('简介')
     expect(result.description).toContain('播放：100')
+  })
+
+  it('normalizes Bilibili owner avatar, category tag, and publish time into rich extras', () => {
+    const result = normalizeBilibiliVideoInfo('https://www.bilibili.com/video/BV14A31eZEH8', {
+      code: 0,
+      data: {
+        bvid: 'BV14A31eZEH8',
+        title: '视频标题',
+        desc: '更完整的简介',
+        pic: 'https://i0.hdslb.com/cover.jpg',
+        owner: {
+          name: 'UP主',
+          face: 'https://i0.hdslb.com/avatar.jpg'
+        },
+        tname: '单机游戏',
+        pubdate: 1700000000
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.extras).toEqual({
+      coverUrl: 'https://i0.hdslb.com/cover.jpg',
+      authorAvatar: 'https://i0.hdslb.com/avatar.jpg',
+      tags: ['单机游戏'],
+      contentBlocks: [
+        { type: 'text', text: '更完整的简介' },
+        { type: 'image', url: 'https://i0.hdslb.com/cover.jpg' }
+      ],
+      createdAt: 1700000000
+    })
   })
 
   it('returns a failure for missing API data', () => {

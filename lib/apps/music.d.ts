@@ -1,10 +1,10 @@
-import * as node_karin6 from "node-karin";
+import * as node_karin12 from "node-karin";
 
 //#region src/apps/music.d.ts
 declare const musicReg: RegExp;
 declare const musicCookieReg: RegExp;
-declare const musicCookie: node_karin6.Command<keyof node_karin6.MessageEventMap>;
-declare const music: node_karin6.Command<keyof node_karin6.MessageEventMap>;
+declare const musicCookie: node_karin12.Command<keyof node_karin12.MessageEventMap>;
+declare const music: node_karin12.Command<keyof node_karin12.MessageEventMap>;
 //# sourceMappingURL=music.d.ts.map
 
 //#endregion

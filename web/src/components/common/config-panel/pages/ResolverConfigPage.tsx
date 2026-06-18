@@ -33,6 +33,37 @@ const ResolverConfigPage = ({ renderers }: ConfigPageProps) => {
           {renderTextField(['resolver', 'proxy'], '代理地址', '可选，留空表示不使用代理。')}
         </>
       ))}
+      {renderSubSection('平台开关', (
+        <>
+          {renderSwitch(['resolver', 'platforms', 'bilibili'], 'B站', '关闭后 B站链接交还给后续插件或 Karin 默认流程。')}
+          {renderSwitch(['resolver', 'platforms', 'douyin'], '抖音', '抖音视频仅保留诊断和降级，不在本轮深修。')}
+          {renderSwitch(['resolver', 'platforms', 'kuaishou'], '快手', '开启后快手链接使用通用接口兜底解析。')}
+          {renderSwitch(['resolver', 'platforms', 'weibo'], '微博', '开启后自动解析微博分享。')}
+          {renderSwitch(['resolver', 'platforms', 'tieba'], '贴吧', '开启后自动解析贴吧帖子和分享卡。')}
+          {renderSwitch(['resolver', 'platforms', 'xiaoheihe'], '小黑盒', '开启后自动解析小黑盒帖子。')}
+          {renderSwitch(['resolver', 'platforms', 'xiaohongshu'], '小红书', '开启后自动解析小红书笔记。')}
+          {renderSwitch(['resolver', 'platforms', 'general'], '通用解析', '开启后西瓜、即刻、皮皮虾等平台使用兜底接口。')}
+        </>
+      ))}
+      {renderSubSection('发送策略', (
+        <>
+          {renderSwitch(['resolver', 'sending', 'contentForwardEnabled'], '正文合并转发', '开启后完整正文和图文顺序使用伪装合并转发。')}
+          {renderSwitch(['resolver', 'sending', 'videoFailureFallbackEnabled'], '视频失败提示原链接', '开启后视频发送失败时保留可读原因和原链接。')}
+        </>
+      ))}
+      {renderSubSection('媒体策略', (
+        <>
+          {renderSwitch(['resolver', 'media', 'dedupeImages'], '图片资源去重', '开启后同图不同尺寸只发送质量较高的一张。')}
+          {renderSwitch(['resolver', 'media', 'filterLowQualityImages'], '过滤低质量图片', '开启后过滤缩略图、模糊图和马赛克图。')}
+          {renderSwitch(['resolver', 'media', 'inlinePreviewCover'], '预览封面内联', '开启后尽量内联预览卡封面，减少防盗链缺图。')}
+        </>
+      ))}
+      {renderSubSection('诊断日志', (
+        <>
+          {renderSwitch(['resolver', 'diagnostics', 'stageLogsEnabled'], '输出解析阶段日志', '开启后记录 match、api、fallback、media、send 等阶段。')}
+          {renderSwitch(['resolver', 'diagnostics', 'verboseLogsEnabled'], '输出成功阶段日志', '关闭后仅保留失败告警日志。')}
+        </>
+      ))}
       {renderSubSection('B站视频', (
         <>
           {renderTextField(['resolver', 'bilibili', 'maxVideoDurationSeconds'], '下载上限（分钟）', '超过上限仅返回视频信息；0 表示不限制。', minuteOptions)}

@@ -1,5 +1,7 @@
 import { fetchText } from '@/services/http'
 
+import { dedupeImageUrls, selectBestImageUrl } from './media'
+import { logResolverStage } from './resolverLog'
 import type { ResolvedPost, ResolverFailure, ResolverResult, RichContentBlock } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
@@ -28,7 +30,11 @@ const pushUniqueMany = (items: string[], value: unknown) => {
 const compactString = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 
 const bestImageUrl = (image: Record<string, any>) => {
-  return compactString(image.urlDefault) || compactString(image.url) || compactString(image.urlPre)
+  return selectBestImageUrl([
+    compactString(image.urlDefault),
+    compactString(image.url),
+    compactString(image.urlPre)
+  ])
 }
 
 const xiaohongshuTags = (note: Record<string, any>) => {
@@ -85,6 +91,8 @@ export const normalizeXiaohongshuNote = (pageUrl: string, payload: unknown): Res
     const imageObject = asObject(image)
     if (imageObject) pushUnique(images, bestImageUrl(imageObject))
   }
+  const normalizedImages = dedupeImageUrls(images)
+  images.splice(0, images.length, ...normalizedImages)
 
   const stream = asObject(note.video?.media?.stream)
   for (const item of Array.isArray(stream?.h264) ? stream.h264 : []) {
@@ -100,7 +108,11 @@ export const normalizeXiaohongshuNote = (pageUrl: string, payload: unknown): Res
 
   if (images.length === 0 && videos.length === 0) return failure('未找到小红书媒体资源')
 
-  const description = String(note.desc || '')
+  const videoLike = compactString(note.type).toLowerCase() === 'video' || Boolean(note.video)
+  const videoFallback = videoLike && videos.length === 0 && images.length > 0
+    ? '视频资源暂不可用，已降级为封面和原链接。'
+    : ''
+  const description = [String(note.desc || ''), videoFallback].filter(Boolean).join('\n')
   const contentBlocks: RichContentBlock[] = [
     description.trim() ? { type: 'text', text: description } : undefined,
     ...images.map(url => ({ type: 'image' as const, url }))
@@ -154,16 +166,22 @@ const expandShortUrl = async (url: string) => {
 }
 
 export const resolveXiaohongshu = async (url: string, cookie = ''): Promise<ResolverResult> => {
+  logResolverStage({ platform: 'xiaohongshu', stage: 'cookie', ok: Boolean(cookie), cookie })
   if (!cookie) return failure('需要在 resolver.yaml 配置 xiaohongshu Cookie')
 
   let finalUrl = url
   try {
     finalUrl = await expandShortUrl(url)
+    logResolverStage({ platform: 'xiaohongshu', stage: 'prepare', ok: true, url: finalUrl })
   } catch {
     finalUrl = url
+    logResolverStage({ platform: 'xiaohongshu', stage: 'prepare', ok: false, reason: 'short url expand failed', url })
   }
 
-  if (!extractXiaohongshuNoteId(finalUrl)) return failure('无法识别小红书笔记 ID')
+  if (!extractXiaohongshuNoteId(finalUrl)) {
+    logResolverStage({ platform: 'xiaohongshu', stage: 'match', ok: false, reason: 'missing note id', url: finalUrl })
+    return failure('无法识别小红书笔记 ID')
+  }
 
   const html = await fetchText(finalUrl, {
     headers: {
@@ -171,8 +189,20 @@ export const resolveXiaohongshu = async (url: string, cookie = ''): Promise<Reso
       Referer: 'https://www.xiaohongshu.com/'
     }
   })
+  logResolverStage({ platform: 'xiaohongshu', stage: 'api', ok: true, url: finalUrl, cookie, extra: { source: 'web-html' } })
   const state = parseEmbeddedJson(html)
-  if (!state) return failure('小红书页面数据异常')
+  if (!state) {
+    logResolverStage({ platform: 'xiaohongshu', stage: 'normalize', ok: false, reason: 'embedded state missing', url: finalUrl })
+    return failure('小红书页面数据异常')
+  }
 
-  return normalizeXiaohongshuNote(finalUrl, state)
+  const result = normalizeXiaohongshuNote(finalUrl, state)
+  logResolverStage({
+    platform: 'xiaohongshu',
+    stage: 'normalize',
+    ok: !('ok' in result),
+    reason: 'ok' in result ? result.reason : undefined,
+    url: finalUrl
+  })
+  return result
 }

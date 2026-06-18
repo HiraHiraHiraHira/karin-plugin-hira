@@ -34,6 +34,29 @@ export const defaultConfig: HiraConfig = {
     commentsEnabled: true,
     priority: 900,
     maxVideoDurationSeconds: 480,
+    platforms: {
+      bilibili: true,
+      douyin: true,
+      kuaishou: true,
+      weibo: true,
+      tieba: true,
+      xiaoheihe: true,
+      xiaohongshu: true,
+      general: true
+    },
+    sending: {
+      contentForwardEnabled: true,
+      videoFailureFallbackEnabled: true
+    },
+    media: {
+      dedupeImages: true,
+      filterLowQualityImages: true,
+      inlinePreviewCover: true
+    },
+    diagnostics: {
+      stageLogsEnabled: true,
+      verboseLogsEnabled: true
+    },
     bilibili: {
       maxVideoDurationSeconds: 480,
       quality: 64,

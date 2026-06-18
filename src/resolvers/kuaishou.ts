@@ -35,5 +35,8 @@ export const resolveKuaishou = async (url: string, generalApis: string[]): Promi
     }
   }
 
-  return resolveByGeneralApis('快手', normalized, generalApis)
+  return resolveByGeneralApis('快手', normalized, generalApis, {
+    platform: 'kuaishou',
+    pageUrl: normalized
+  })
 }

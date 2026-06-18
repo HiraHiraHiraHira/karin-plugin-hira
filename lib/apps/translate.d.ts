@@ -1,7 +1,7 @@
-import * as node_karin2 from "node-karin";
+import * as node_karin0 from "node-karin";
 
 //#region src/apps/translate.d.ts
-declare const translate: node_karin2.Command<keyof node_karin2.MessageEventMap>;
+declare const translate: node_karin0.Command<keyof node_karin0.MessageEventMap>;
 //# sourceMappingURL=translate.d.ts.map
 
 //#endregion

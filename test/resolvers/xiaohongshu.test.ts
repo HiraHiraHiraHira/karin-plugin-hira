@@ -65,6 +65,62 @@ describe('xiaohongshu resolver helpers', () => {
     expect('ok' in result).toBe(false)
   })
 
+  it('filters obvious Xiaohongshu mosaic image candidates before building images and content blocks', () => {
+    const result = normalizeXiaohongshuNote('https://www.xiaohongshu.com/explore/abc123', {
+      note: {
+        title: '单图笔记',
+        desc: '正文',
+        imageList: [
+          {
+            urlDefault: 'https://sns-img-qc.xhscdn.com/a.jpg?imageMogr2/blur/50x50',
+            url: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp',
+            urlPre: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/240/format/webp'
+          },
+          {
+            urlDefault: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/240/format/webp',
+            url: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp'
+          }
+        ]
+      }
+    })
+
+    expect(result).toMatchObject({
+      platform: 'xiaohongshu',
+      images: ['https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp'],
+      extras: {
+        coverUrl: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp',
+        contentBlocks: [
+          { type: 'text', text: '正文' },
+          { type: 'image', url: 'https://sns-img-qc.xhscdn.com/a.jpg?imageView2/2/w/1080/format/webp' }
+        ]
+      }
+    })
+    expect('ok' in result).toBe(false)
+  })
+
+  it('keeps Xiaohongshu video notes usable when video URLs are unavailable by falling back to cover and link', () => {
+    const result = normalizeXiaohongshuNote('https://www.xiaohongshu.com/explore/abc123', {
+      note: {
+        title: '视频笔记',
+        desc: '视频正文',
+        type: 'video',
+        user: { nickname: '作者' },
+        imageList: [{ urlDefault: 'https://sns-img-qc.xhscdn.com/cover.jpg' }],
+        video: { media: { stream: {} } }
+      }
+    })
+
+    expect(result).toMatchObject({
+      platform: 'xiaohongshu',
+      title: '视频笔记',
+      images: ['https://sns-img-qc.xhscdn.com/cover.jpg'],
+      videos: [],
+      description: expect.stringContaining('视频资源暂不可用'),
+      pageUrl: 'https://www.xiaohongshu.com/explore/abc123'
+    })
+    expect('ok' in result).toBe(false)
+  })
+
   it('prefers stable Xiaohongshu video backup urls before signed master urls', () => {
     const result = normalizeXiaohongshuNote('https://www.xiaohongshu.com/explore/abc123', {
       note: {

@@ -57,7 +57,103 @@ export const extractWeiboId = (input: string) => {
   return undefined
 }
 
-const stripHtml = (text: string) => text.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()
+const stripHtml = (text: string) => text
+  .replace(/<br\s*\/?>/gi, '\n')
+  .replace(/<[^>]+>/g, '')
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&amp;/g, '&')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&#39;/g, '\'')
+  .replace(/&quot;/g, '"')
+  .trim()
+
+const asObject = (value: unknown): Record<string, any> | undefined => {
+  return typeof value === 'object' && value !== null ? value as Record<string, any> : undefined
+}
+
+const firstString = (...values: unknown[]) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+const pushUnique = (items: string[], value: unknown) => {
+  const url = firstString(value)
+  if (url && !items.includes(url)) items.push(url)
+}
+
+const statusText = (status: Record<string, any> | undefined) => {
+  if (!status) return ''
+  return stripHtml(firstString(
+    status.longTextContent,
+    status.long_text?.longTextContent,
+    status.longText?.longTextContent,
+    status.text
+  ) || '')
+}
+
+const weiboPicUrls = (status: Record<string, any> | undefined) => {
+  const images: string[] = []
+  if (!status) return images
+
+  for (const pic of Array.isArray(status.pics) ? status.pics : []) {
+    pushUnique(images, pic?.large?.url || pic?.largest?.url || pic?.bmiddle?.url || pic?.url)
+  }
+
+  const picInfos = asObject(status.pic_infos)
+  for (const pic of Object.values(picInfos || {})) {
+    const item = asObject(pic)
+    pushUnique(images, item?.largest?.url || item?.large?.url || item?.bmiddle?.url || item?.thumbnail?.url)
+  }
+
+  return images
+}
+
+const weiboCoverUrl = (status: Record<string, any> | undefined) => {
+  if (!status) return undefined
+  const pageInfo = asObject(status.page_info)
+  const mediaInfo = asObject(pageInfo?.media_info)
+  return firstString(
+    pageInfo?.page_pic?.url,
+    pageInfo?.pic_info?.pic_big?.url,
+    pageInfo?.pic_info?.pic_middle?.url,
+    mediaInfo?.cover_image,
+    mediaInfo?.cover_image_phone,
+    mediaInfo?.poster,
+    mediaInfo?.image
+  )
+}
+
+const weiboVideoUrl = (status: Record<string, any> | undefined) => {
+  if (!status) return undefined
+  const pageInfo = asObject(status.page_info)
+  const media = asObject(pageInfo?.media_info)
+  const videoUrls = asObject(pageInfo?.urls)
+  return firstString(
+    media?.stream_url_hd,
+    media?.stream_url,
+    media?.mp4_hd_url,
+    media?.mp4_sd_url,
+    videoUrls?.mp4_720p_mp4,
+    videoUrls?.mp4_hd_mp4,
+    videoUrls?.mp4_ld_mp4
+  )
+}
+
+const weiboAuthorAvatar = (status: Record<string, any>) => firstString(
+  status.user?.avatar_hd,
+  status.user?.avatar_large,
+  status.user?.profile_image_url
+)
+
+const weiboStatusRequestId = (status: Record<string, any>, fallback: string) => firstString(
+  status.idstr,
+  typeof status.id === 'number' ? String(status.id) : status.id,
+  typeof status.mid === 'number' ? String(status.mid) : status.mid,
+  fallback
+) || fallback
 
 const parseJsonObjectFrom = (text: string, start: number) => {
   const open = text.indexOf('{', start)
@@ -124,28 +220,44 @@ const weiboCommentBlocks = (comments: string[]): RichCommentBlock[] => comments.
 }).filter(comment => comment.text)
 
 export const normalizeWeiboStatus = (url: string, status: Record<string, any>, comments: string[] = []): ResolvedPost => {
-  const pics = Array.isArray(status.pics) ? status.pics.map((pic: any) => pic.large?.url || pic.url).filter(Boolean) : []
+  const retweetedStatus = asObject(status.retweeted_status)
+  const pics = [
+    ...weiboPicUrls(status),
+    ...weiboPicUrls(retweetedStatus)
+  ]
+  const coverUrl = weiboCoverUrl(status) || weiboCoverUrl(retweetedStatus)
+  if (coverUrl) pushUnique(pics, coverUrl)
   const pageUrl = status.bid ? `https://weibo.com/${status.user?.id || ''}/${status.bid}` : url
-  const media = status.page_info?.media_info
-  const videoUrls = status.page_info?.urls
-  const video = media?.stream_url_hd
-    || media?.stream_url
-    || media?.mp4_hd_url
-    || media?.mp4_sd_url
-    || videoUrls?.mp4_720p_mp4
-    || videoUrls?.mp4_hd_mp4
-    || videoUrls?.mp4_ld_mp4
-  const text = stripHtml(status.text || '')
+  const video = weiboVideoUrl(status) || weiboVideoUrl(retweetedStatus)
+  const text = statusText(status)
+  const retweetedText = statusText(retweetedStatus)
+  const retweetedAuthor = retweetedStatus?.user?.screen_name
+  const retweetedLine = retweetedStatus
+    ? `转发 @${retweetedAuthor || '原微博'}${retweetedText ? `：${retweetedText}` : ''}`
+    : ''
+  const meta = [status.source, status.region_name].filter(Boolean).join('\t')
   const description = [
     text,
-    [status.source, status.region_name].filter(Boolean).join('\t'),
+    retweetedLine,
+    meta,
     comments.length > 0 ? `热门评论\n${comments.join('\n')}` : ''
   ].filter(Boolean).join('\n\n')
   const contentBlocks: RichContentBlock[] = [
     text ? { type: 'text', text } : undefined,
+    retweetedLine ? { type: 'text', text: retweetedLine } : undefined,
     ...pics.map(url => ({ type: 'image' as const, url }))
   ].filter(Boolean) as RichContentBlock[]
   const commentBlocks = weiboCommentBlocks(comments)
+  const extras: ResolvedPost['extras'] = {
+    contentBlocks,
+    commentBlocks
+  }
+  if (coverUrl) extras.coverUrl = coverUrl
+  const authorAvatar = weiboAuthorAvatar(status)
+  if (authorAvatar) extras.authorAvatar = authorAvatar
+  if (status.region_name) extras.location = String(status.region_name)
+  if (status.created_at) extras.createdAt = status.created_at
+  if (retweetedStatus) extras.tags = ['转发']
 
   return {
     platform: 'weibo',
@@ -156,10 +268,24 @@ export const normalizeWeiboStatus = (url: string, status: Record<string, any>, c
     pageUrl,
     videos: video ? [video] : [],
     images: pics,
-    extras: {
-      contentBlocks,
-      commentBlocks
-    }
+    extras
+  }
+}
+
+const enrichWeiboLongText = async (
+  id: string,
+  status: Record<string, any>,
+  headers: Record<string, string>
+) => {
+  if (!status.isLongText || status.longTextContent || status.longText?.longTextContent || status.long_text?.longTextContent) return status
+  try {
+    const payload = await fetchJson<{ data?: { longTextContent?: string } }>(`https://m.weibo.cn/statuses/extend?id=${encodeURIComponent(id)}`, {
+      headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    const longTextContent = payload.data?.longTextContent
+    return longTextContent ? { ...status, longTextContent } : status
+  } catch {
+    return status
   }
 }
 
@@ -186,10 +312,12 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
       status = data.data
     }
     if (!status) throw new Error('empty api data')
+    const requestId = weiboStatusRequestId(status, id)
+    status = await enrichWeiboLongText(requestId, status, headers)
 
     let comments: string[] = []
     try {
-      const commentData = await fetchJson(`https://m.weibo.cn/comments/hotflow?id=${encodeURIComponent(id)}&mid=${encodeURIComponent(id)}&max_id_type=0`, {
+      const commentData = await fetchJson(`https://m.weibo.cn/comments/hotflow?id=${encodeURIComponent(requestId)}&mid=${encodeURIComponent(requestId)}&max_id_type=0`, {
         headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
       })
       comments = normalizeWeiboComments(commentData)
