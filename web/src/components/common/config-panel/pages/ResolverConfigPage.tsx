@@ -5,6 +5,7 @@ import {
   minutesToSeconds,
   secondsToMinutes
 } from '../options'
+import CookieMigrationPanel from '../CookieMigrationPanel'
 import type { ConfigPageProps } from './pageTypes'
 
 const minuteOptions = {
@@ -17,7 +18,7 @@ const minuteOptions = {
   parse: minutesToSeconds
 }
 
-const ResolverConfigPage = ({ renderers }: ConfigPageProps) => {
+const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: ConfigPageProps) => {
   const { renderListField, renderPageHeader, renderSelectField, renderSubSection, renderSwitch, renderTextField } = renderers
 
   return (
@@ -86,6 +87,7 @@ const ResolverConfigPage = ({ renderers }: ConfigPageProps) => {
           {renderTextField(['resolver', 'cookies', 'bilibili'], 'B站解析 Cookie', '用于 B站视频信息和高画质流获取，留空不会阻止保存。', { type: 'password' })}
         </>
       ))}
+      <CookieMigrationPanel config={config} device={device} onApplyConfig={onApplyConfig} />
       {renderSubSection('通用解析 API', (
         <>{renderListField(['resolver', 'generalApis'], '兜底解析接口', 'Hira 会按顺序尝试这些接口，每行一个地址，使用 {url} 作为分享链接占位符。')}</>
       ))}

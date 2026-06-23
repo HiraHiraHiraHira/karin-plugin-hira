@@ -8,6 +8,7 @@ import './apps/resolvers'
 import './apps/status'
 import './apps/summary'
 import './apps/translate'
+import './apps/update'
 import './server/register'
 
 import { initConfig } from './config'

@@ -76,6 +76,10 @@ const ConfigPanel = ({ device = 'desktop', variant = 'standalone' }: ConfigPanel
     })
   })
 
+  const applyMigratedConfig = useMemoizedFn((nextConfig: ConfigType) => {
+    setPanelState({ config: nextConfig })
+  })
+
   const handleSave = useMemoizedFn(() => {
     if (!config || hasValidationError) return
 
@@ -237,6 +241,7 @@ const ConfigPanel = ({ device = 'desktop', variant = 'standalone' }: ConfigPanel
             classes={classes}
             config={config}
             device={device}
+            onApplyConfig={applyMigratedConfig}
             renderers={renderers}
             updateConfigValue={updateConfigValue}
           />

@@ -51,6 +51,20 @@ describe('Hira custom config page', () => {
     expect(panelSource).toContain('Tabs.List')
   })
 
+  it('wires Cookie migration into the custom WebUI without chat commands', () => {
+    const panelSource = fs.readFileSync(path.join(process.cwd(), 'web', 'src', 'components', 'common', 'ConfigPanel.tsx'), 'utf8')
+    const resolverPageSource = fs.readFileSync(path.join(process.cwd(), 'web', 'src', 'components', 'common', 'config-panel', 'pages', 'ResolverConfigPage.tsx'), 'utf8')
+    const migrationSource = fs.readFileSync(path.join(process.cwd(), 'web', 'src', 'components', 'common', 'config-panel', 'CookieMigrationPanel.tsx'), 'utf8')
+
+    expect(panelSource).not.toContain('CookieMigrationPanel')
+    expect(resolverPageSource).toContain('CookieMigrationPanel')
+    expect(resolverPageSource.indexOf('平台 Cookie（可选）')).toBeLessThan(resolverPageSource.indexOf('<CookieMigrationPanel'))
+    expect(migrationSource).toContain('Cookie 迁移')
+    expect(migrationSource).toContain('exportCookieMigrationPayload')
+    expect(migrationSource).toContain('importCookieMigrationPayload')
+    expect(migrationSource).toContain('检查无误后点击保存写入配置')
+  })
+
   it('exposes every default config field in the custom page', () => {
     const source = readWebSource()
     const requiredPaths = [

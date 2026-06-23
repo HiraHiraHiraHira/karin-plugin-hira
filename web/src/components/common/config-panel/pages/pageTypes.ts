@@ -6,6 +6,7 @@ export interface ConfigPageProps {
   classes: ConfigPanelLayoutClasses
   config: ConfigType
   device: DeviceLayout
+  onApplyConfig: (config: ConfigType) => void
   renderers: ConfigFieldRenderers
   updateConfigValue: (path: ConfigPath, value: unknown) => void
 }

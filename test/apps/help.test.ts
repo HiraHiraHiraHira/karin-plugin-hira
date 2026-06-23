@@ -33,4 +33,10 @@ describe('help command', () => {
       { type: 'image', file: `base64://${Buffer.from('help-card').toString('base64')}` }
     ])
   })
+
+  it('lists the update command in fallback help text', async () => {
+    const { helpFallbackText } = await import('@/apps/help')
+
+    expect(helpFallbackText()).toContain('#Hira更新 / #hi更新')
+  })
 })

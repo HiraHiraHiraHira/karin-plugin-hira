@@ -1,7 +1,7 @@
-import * as node_karin1 from "node-karin";
+import * as node_karin3 from "node-karin";
 
 //#region src/apps/summary.d.ts
-declare const summary: node_karin1.Command<keyof node_karin1.MessageEventMap>;
+declare const summary: node_karin3.Command<keyof node_karin3.MessageEventMap>;
 //# sourceMappingURL=summary.d.ts.map
 
 //#endregion

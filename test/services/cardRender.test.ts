@@ -9,6 +9,7 @@ import {
   buildResolverPreviewCardHtml,
   buildResolverCardHtml,
   buildStatusCardHtml,
+  buildUpdateCardHtml,
   renderTemplateHtml,
   writeCardHtmlFile,
   renderCardImage
@@ -116,6 +117,38 @@ describe('cardRender', () => {
     expect(html).toContain('status-pill status-ok')
     expect(html).toContain('status-pill status-off')
     expect(html).toContain('用于合并 B站 DASH')
+  })
+
+  it('builds a Hira-branded update card with version and change details', () => {
+    const html = buildUpdateCardHtml({
+      state: 'available',
+      title: '发现 Git 更新',
+      subtitle: '检测到 2 次新提交，更新前先展示摘要。',
+      current: 'v0.1.0',
+      latest: 'v0.1.0',
+      source: 'Git',
+      lagCount: 2,
+      meta: [
+        { label: '当前提交', value: 'd90d2e8' },
+        { label: '远程提交', value: 'a1b2c3d' }
+      ],
+      details: ['a1b2c3d 优化更新卡片', 'b4c5d6e 修复 Cookie 迁移']
+    })
+
+    expect(html).toContain('UPDATE.CHECK')
+    expect(html).toContain('UPDATE')
+    expect(html).toContain('发现 Git 更新')
+    expect(html).toMatch(/当前版本<\/div>\s*<div class="update-node-value">v0\.1\.0<\/div>/)
+    expect(html).toContain('当前提交')
+    expect(html).toContain('d90d2e8')
+    expect(html).toContain('远程提交')
+    expect(html).toContain('a1b2c3d')
+    expect(html).toContain('Git')
+    expect(html).toContain('2 次')
+    expect(html).toContain('优化更新卡片')
+    expect(html).toContain('修复 Cookie 迁移')
+    expect(html).toContain('karin-plugin-hira')
+    expect(html).not.toContain('karin-plugin-kkk')
   })
 
   it('builds a resolver result card with platform, title, counts, and source url', () => {
