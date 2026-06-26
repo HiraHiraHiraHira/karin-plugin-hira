@@ -1,4 +1,4 @@
-import * as node_karin18 from "node-karin";
+import * as node_karin0 from "node-karin";
 import { Message } from "node-karin";
 
 //#region src/apps/update.d.ts
@@ -14,8 +14,8 @@ declare const handleHiraUpdate: (e: Message) => Promise<void>;
 declare const checkAndNotifyUpdate: () => Promise<boolean>;
 declare const handleHiraUpdateReply: (e: Message, next?: HookNext) => Promise<void>;
 declare const hiraUpdateHook: number;
-declare const hiraUpdateCommand: node_karin18.Command<keyof node_karin18.MessageEventMap>;
-declare const update: node_karin18.Task;
+declare const hiraUpdateCommand: node_karin0.Command<keyof node_karin0.MessageEventMap>;
+declare const update: node_karin0.Task;
 //#endregion
 export { UPDATE_LOCK_KEY, UPDATE_MSGID_KEY, checkAndNotifyUpdate, handleHiraUpdate, handleHiraUpdateReply, hiraUpdateCommand, hiraUpdateHook, resolveGitUpdateTarget, update, updateReg };
 //# sourceMappingURL=update.d.ts.map

@@ -1,4 +1,4 @@
-import * as node_karin5 from "node-karin";
+import * as node_karin8 from "node-karin";
 import { Message } from "node-karin";
 
 //#region src/apps/help.d.ts
@@ -29,7 +29,7 @@ declare const helpMenu: ({
 })[];
 declare const helpFallbackText: () => string;
 declare const replyHelp: (e: Message) => Promise<void>;
-declare const help: node_karin5.Command<keyof node_karin5.MessageEventMap>;
+declare const help: node_karin8.Command<keyof node_karin8.MessageEventMap>;
 //# sourceMappingURL=help.d.ts.map
 //#endregion
 export { help, helpFallbackText, helpMenu, helpReg, replyHelp };

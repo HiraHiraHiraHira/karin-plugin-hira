@@ -152,7 +152,7 @@ describe('bilibili resolver helpers', () => {
     expect(selectBestBilibiliStream(streams, 'avc')?.url).toBe('https://video.example.test/avc-small.m4s')
   })
 
-  it('resolves Bilibili playurl media instead of returning only metadata', async () => {
+  it('downloads Bilibili progressive media instead of returning expiring playurl links', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.includes('/x/web-interface/view')) {
         return new Response(JSON.stringify({
@@ -187,8 +187,23 @@ describe('bilibili resolver helpers', () => {
     expect(result).toMatchObject({
       platform: 'bilibili',
       title: '视频标题',
-      videos: ['https://video.example.test/bilibili.mp4']
+      videos: [expect.stringMatching(/\.mp4$/)]
     })
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.videos[0]).not.toBe('https://video.example.test/bilibili.mp4')
+    expect(downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://video.example.test/bilibili.mp4',
+      output: expect.stringMatching(/\.mp4$/),
+      headers: expect.objectContaining({
+        Referer: 'https://www.bilibili.com/video/BV14A31eZEH8'
+      })
+    }))
+    expect(runFfmpeg).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.stringMatching(/\.mp4$/),
+      output: result.videos[0],
+      format: 'qq-video'
+    }))
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/x/player/playurl'),
       expect.objectContaining({
@@ -197,6 +212,101 @@ describe('bilibili resolver helpers', () => {
         })
       })
     )
+  })
+
+  it('falls back to cover and source link when Bilibili DASH media expires before merge', async () => {
+    runtimeMocks.runFfmpeg.mockRejectedValueOnce(new Error('ffmpeg exited with code 1'))
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            aid: 123,
+            bvid: 'BV14A31eZEH8',
+            cid: 456,
+            title: '视频标题',
+            desc: '简介',
+            pic: 'https://i0.hdslb.com/cover.jpg',
+            owner: { name: 'UP主' },
+            duration: 120
+          }
+        }), { status: 200 })
+      }
+
+      if (url.includes('/x/player/playurl')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            dash: {
+              video: [
+                { id: 64, baseUrl: 'https://video.example.test/expired.m4s', bandwidth: 2000 }
+              ],
+              audio: [
+                { id: 30216, baseUrl: 'https://audio.example.test/audio.m4s' }
+              ]
+            }
+          }
+        }), { status: 200 })
+      }
+
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveBilibili('https://www.bilibili.com/video/BV14A31eZEH8')
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result).toMatchObject({
+      platform: 'bilibili',
+      title: '视频标题',
+      images: ['https://i0.hdslb.com/cover.jpg'],
+      videos: []
+    })
+    expect(result.description).toContain('视频资源暂不可用，已降级为封面和原链接')
+  })
+
+  it('does not return expiring Bilibili progressive urls when download fails', async () => {
+    runtimeMocks.downloadFile.mockRejectedValueOnce(new Error('HTTP 403'))
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            aid: 123,
+            bvid: 'BV14A31eZEH8',
+            cid: 456,
+            title: '视频标题',
+            pic: 'https://i0.hdslb.com/cover.jpg',
+            owner: { name: 'UP主' },
+            duration: 120
+          }
+        }), { status: 200 })
+      }
+
+      if (url.includes('/x/player/playurl')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            durl: [{ url: 'https://video.example.test/expired.mp4' }]
+          }
+        }), { status: 200 })
+      }
+
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveBilibili('https://www.bilibili.com/video/BV14A31eZEH8')
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result).toMatchObject({
+      platform: 'bilibili',
+      videos: []
+    })
+    expect(result.videos).not.toContain('https://video.example.test/expired.mp4')
+    expect(result.description).toContain('视频资源暂不可用，已降级为封面和原链接')
   })
 
   it('downloads and merges DASH video and audio streams for Bilibili videos', async () => {

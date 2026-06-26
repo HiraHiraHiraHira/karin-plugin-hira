@@ -34,6 +34,57 @@ describe('cardRender', () => {
     expect(html).toContain('<section data-testid="body">ok</section>')
   })
 
+  it('uses opaque card backgrounds and keeps decorative layers behind content', () => {
+    const html = renderTemplateHtml({
+      hero: 'TEST',
+      eyebrow: 'TEMPLATE.SYSTEM',
+      title: '模板测试',
+      watermark: 'GUIDE',
+      body: '<section data-testid="body">ok</section>'
+    })
+
+    expect(html).not.toContain('background: transparent;')
+    expect(html).toContain('--hira-bg: #f8f9fb;')
+    expect(html).toContain('--hira-surface: #ffffff;')
+    expect(html).toContain('--hira-surface-strong: #ffffff;')
+    expect(html).not.toContain('rgba(255, 255, 255, 0.96)')
+    expect(html).not.toContain('rgba(241, 245, 249, 0.96)')
+    expect(html).toMatch(/body\s*{[\s\S]*background:\s*var\(--hira-bg\);/)
+    expect(html).toMatch(/\.hira-render-shell\s*{[\s\S]*background:\s*var\(--hira-surface\);/)
+    expect(html).toMatch(/\.guide-watermark\s*{[\s\S]*z-index:\s*0;/)
+    expect(html).toMatch(/\.render-content\s*{[\s\S]*z-index:\s*2;/)
+  })
+
+  it('explicitly hides document style containers from renderer screenshots', () => {
+    const html = renderTemplateHtml({
+      hero: 'TEST',
+      eyebrow: 'TEMPLATE.SYSTEM',
+      title: '模板测试',
+      body: '<section data-testid="body">ok</section>'
+    })
+
+    expect(html).toContain('<head style="display:none!important">')
+    expect(html).toContain('<style style="display:none!important">')
+  })
+
+  it('uses opaque backgrounds for resolver preview cards', () => {
+    const html = buildResolverPreviewCardHtml({
+      platform: 'general',
+      displayName: '通用解析',
+      pageUrl: 'https://example.com/post/1',
+      title: '解析预览测试',
+      description: '确认预览图不会依赖透明背景。',
+      images: [],
+      videos: []
+    })
+
+    expect(html).not.toContain('background: transparent;')
+    expect(html).toContain('<head style="display:none!important">')
+    expect(html).toContain('<style style="display:none!important">')
+    expect(html).toMatch(/body\s*{[\s\S]*background:\s*#f4f4f5;/)
+    expect(html).toMatch(/#container\s*{[\s\S]*background:\s*#f4f4f5;/)
+  })
+
   it('builds a kkk-inspired grouped help card instead of plain help text', () => {
     const html = buildHelpCardHtml([
       {
@@ -60,8 +111,8 @@ describe('cardRender', () => {
     ])
 
     expect(html).toContain('hira-render-shell')
-    expect(html).toContain('SYSTEM_READY')
-    expect(html).toContain('COMMANDS')
+    expect(html).toContain('SYSTEM READY')
+    expect(html).toContain('HELP')
     expect(html).toContain('CURRENT MODULE')
     expect(html).toContain('插件帮助')
     expect(html).toContain('command-grid')
@@ -88,7 +139,7 @@ describe('cardRender', () => {
     ], 1)
 
     expect(html).toContain('hira-render-shell')
-    expect(html).toContain('SEARCH.RESULTS')
+    expect(html).toContain('SEARCH RESULTS')
     expect(html).toContain('点歌列表')
     expect(html).toContain('music-row')
     expect(html).toContain('music-index')
@@ -135,7 +186,7 @@ describe('cardRender', () => {
       details: ['a1b2c3d 优化更新卡片', 'b4c5d6e 修复 Cookie 迁移']
     })
 
-    expect(html).toContain('UPDATE.CHECK')
+    expect(html).toContain('UPDATE CHECK')
     expect(html).toContain('UPDATE')
     expect(html).toContain('发现 Git 更新')
     expect(html).toMatch(/当前版本<\/div>\s*<div class="update-node-value">v0\.1\.0<\/div>/)
@@ -163,7 +214,7 @@ describe('cardRender', () => {
       videos: ['D:/tmp/video.mp4']
     })
 
-    expect(html).toContain('RESOLVER.RESULT')
+    expect(html).toContain('RESOLVER RESULT')
     expect(html).toContain('解析结果')
     expect(html).toContain('微博')
     expect(html).toContain('一条微博')
@@ -349,7 +400,7 @@ describe('cardRender', () => {
       details: ['接口返回 403', '触发命令：微博链接']
     })
 
-    expect(html).toContain('SYSTEM.ERROR')
+    expect(html).toContain('SYSTEM ERROR')
     expect(html).toContain('诊断卡片')
     expect(html).toContain('解析失败')
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')

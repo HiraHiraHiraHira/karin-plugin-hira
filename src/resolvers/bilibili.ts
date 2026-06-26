@@ -5,6 +5,7 @@ import { createTempFilePath } from '@/runtime/temp'
 import { fetchJson } from '@/services/http'
 import type { ResolverConfig } from '@/types/config'
 
+import { logResolverStage } from './resolverLog'
 import type { ResolvedPost, ResolverFailure, ResolverResult, RichContentBlock } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
@@ -33,6 +34,13 @@ const getMediaUrl = (value: unknown): string | undefined => {
   const url = item?.url || item?.baseUrl || item?.base_url || item?.backupUrl?.[0] || item?.backup_url?.[0]
   return typeof url === 'string' && url ? url : undefined
 }
+
+const mediaFallbackMessage = '视频资源暂不可用，已降级为封面和原链接。'
+
+const appendDescription = (result: ResolvedPost, message: string): ResolvedPost => ({
+  ...result,
+  description: [result.description, message].filter(Boolean).join('\n')
+})
 
 type BilibiliCodecPreference = ResolverConfig['bilibili']['codec']
 
@@ -144,6 +152,45 @@ const resolveDashVideo = async (media: { videoUrl: string, audioUrl: string }, h
   })
 }
 
+const resolveProgressiveVideo = async (url: string, headers: Record<string, string>) => {
+  const timeoutMs = Math.max(10, Config.runtime.downloadTimeoutSeconds) * 1000
+  const rawVideo = await downloadFile({
+    url,
+    output: createTempFilePath('bilibili', 'mp4'),
+    headers,
+    timeoutMs
+  })
+
+  try {
+    return await runFfmpeg({
+      input: rawVideo,
+      output: createTempFilePath('bilibili', 'mp4'),
+      format: 'qq-video'
+    })
+  } catch {
+    return rawVideo
+  }
+}
+
+const fallbackFromMediaFailure = (result: ResolvedPost, reason: unknown, url: string): ResolvedPost => {
+  logResolverStage({
+    platform: 'bilibili',
+    stage: 'media',
+    ok: false,
+    reason: reason instanceof Error ? reason.message : String(reason),
+    url,
+    extra: { fallback: 'cover-link-only' }
+  })
+  logResolverStage({
+    platform: 'bilibili',
+    stage: 'fallback',
+    ok: true,
+    url: result.pageUrl,
+    extra: { source: 'cover-link-only' }
+  })
+  return appendDescription(result, mediaFallbackMessage)
+}
+
 export const normalizeBilibiliVideoInfo = (pageUrl: string, payload: unknown): ResolvedPost | ResolverFailure => {
   const root = asObject(payload)
   const data = asObject(root?.data)
@@ -243,13 +290,30 @@ export const resolveBilibili = async (url: string, cookie = ''): Promise<Resolve
   }
   const quality = normalizeNumber(bilibiliConfig?.quality, 64)
   const codec = normalizeCodecPreference(bilibiliConfig?.codec)
-  const playPayload = await fetchJson(createBilibiliPlayUrl(bvid, String(cid), quality), { headers: mediaHeaders })
+  const playUrl = createBilibiliPlayUrl(bvid, String(cid), quality)
+  let playPayload: unknown
+  try {
+    playPayload = await fetchJson(playUrl, { headers: mediaHeaders })
+  } catch (error) {
+    return fallbackFromMediaFailure(result, error, playUrl)
+  }
+
   const dash = selectBilibiliDash(playPayload, codec, quality)
   if (!dash) {
     const durl = selectBilibiliDurl(playPayload)
-    return durl ? { ...result, videos: [durl] } : result
+    if (!durl) return result
+    try {
+      const video = await resolveProgressiveVideo(durl, mediaHeaders)
+      return { ...result, videos: [video] }
+    } catch (error) {
+      return fallbackFromMediaFailure(result, error, durl)
+    }
   }
 
-  const video = await resolveDashVideo(dash, mediaHeaders)
-  return { ...result, videos: [video] }
+  try {
+    const video = await resolveDashVideo(dash, mediaHeaders)
+    return { ...result, videos: [video] }
+  } catch (error) {
+    return fallbackFromMediaFailure(result, error, dash.videoUrl)
+  }
 }
