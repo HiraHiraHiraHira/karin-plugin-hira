@@ -85,6 +85,9 @@ export type RuntimeConfig = {
   ffmpegPath: string
   ffprobePath: string
   downloadTimeoutSeconds: number
+  maxVideoFileSizeBytes: number
+  maxPreviewCoverBytes: number
+  maxTempBytes: number
 }
 
 export type LightConfig = {

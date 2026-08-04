@@ -5,6 +5,7 @@ import { app as karinApp, authMiddleware, logger } from 'node-karin'
 import express from 'node-karin/express'
 
 import { readAllConfig, saveAllConfig, saveConfigModule } from '@/config'
+import { maskSensitiveConfig, restoreMaskedSecrets } from '@/config/sensitive'
 import { validateHiraConfig } from '@/config/validation'
 import { Root } from '@/root'
 import type { HiraConfig } from '@/types/config'
@@ -47,7 +48,9 @@ const saveFullConfig = (req: express.Request, res: express.Response) => {
     return
   }
 
-  const merged = mergeConfigPatch(readAllConfig(), nextConfig as Partial<HiraConfig>)
+  const current = readAllConfig()
+  const restoredPatch = restoreMaskedSecrets(current, nextConfig as Partial<HiraConfig>)
+  const merged = mergeConfigPatch(current, restoredPatch)
   const errors = validateHiraConfig(merged)
   if (errors.length > 0) {
     res.status(400).json({
@@ -62,7 +65,7 @@ const saveFullConfig = (req: express.Request, res: express.Response) => {
   res.json({
     success: true,
     message: 'Hira 配置已保存',
-    data: readAllConfig()
+    data: maskSensitiveConfig(readAllConfig())
   })
 }
 
@@ -70,7 +73,7 @@ apiRouter.get('/v1/config', authMiddleware, (_req: express.Request, res: express
   res.json({
     success: true,
     message: '获取配置成功',
-    data: readAllConfig()
+    data: maskSensitiveConfig(readAllConfig())
   })
 })
 
@@ -88,7 +91,7 @@ apiRouter.get('/v1/config/:module', authMiddleware, (req: express.Request, res: 
   res.json({
     success: true,
     message: '获取配置成功',
-    data: readAllConfig()[moduleName]
+    data: maskSensitiveConfig(readAllConfig())[moduleName]
   })
 })
 
@@ -116,7 +119,9 @@ apiRouter.post('/v1/config/:module', authMiddleware, (req: express.Request, res:
     return
   }
 
-  const merged = mergeConfigPatch(readAllConfig(), { [moduleName]: nextConfig } as Partial<HiraConfig>)
+  const current = readAllConfig()
+  const restoredPatch = restoreMaskedSecrets(current, { [moduleName]: nextConfig } as Partial<HiraConfig>)
+  const merged = mergeConfigPatch(current, restoredPatch)
   const errors = validateHiraConfig(merged)
   if (errors.length > 0) {
     res.status(400).json({
@@ -131,7 +136,7 @@ apiRouter.post('/v1/config/:module', authMiddleware, (req: express.Request, res:
   res.json({
     success: true,
     message: '配置更新成功',
-    data: readAllConfig()[moduleName]
+    data: maskSensitiveConfig(readAllConfig())[moduleName]
   })
 })
 

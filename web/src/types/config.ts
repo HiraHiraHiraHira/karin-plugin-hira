@@ -83,6 +83,9 @@ export type ConfigType = {
     ffmpegPath: string
     ffprobePath: string
     downloadTimeoutSeconds: number
+    maxVideoFileSizeBytes: number
+    maxPreviewCoverBytes: number
+    maxTempBytes: number
   }
   light: {
     enabled: boolean

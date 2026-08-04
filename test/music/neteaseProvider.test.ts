@@ -20,12 +20,12 @@ describe('Netease provider helpers', () => {
       } as T
     }
     const provider = new NeteaseProvider({
-      baseUrl: 'http://music.163.com/api',
+      baseUrl: 'https://music.163.com/api',
       fetchJson: requestJson
     })
 
     await expect(provider.search('青花', 1, 10)).resolves.toHaveLength(1)
-    expect(calls[0].url).toBe('http://music.163.com/api/cloudsearch/pc')
+    expect(calls[0].url).toBe('https://music.163.com/api/cloudsearch/pc')
     expect(calls[0].method).toBe('POST')
     expect(String(calls[0].body)).toContain('s=%E9%9D%92%E8%8A%B1')
     expect(String(calls[0].body)).toContain('limit=10')
@@ -34,7 +34,7 @@ describe('Netease provider helpers', () => {
 
   it('uses xiaofei-compatible outer media url for music.163.com api base playback fallback', async () => {
     const provider = new NeteaseProvider({
-      baseUrl: 'http://music.163.com/api',
+      baseUrl: 'https://music.163.com/api',
       fetchJson: async () => {
         throw new Error('should not call song/url endpoint for official api base')
       }
@@ -47,7 +47,7 @@ describe('Netease provider helpers', () => {
       artists: ['周传雄'],
       pageUrl: 'http://music.163.com/#/song?id=123'
     })).resolves.toMatchObject({
-      audioUrl: 'http://music.163.com/song/media/outer/url?id=123'
+      audioUrl: 'https://music.163.com/song/media/outer/url?id=123'
     })
   })
 

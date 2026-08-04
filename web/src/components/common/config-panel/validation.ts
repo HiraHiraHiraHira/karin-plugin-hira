@@ -15,6 +15,9 @@ const numberRules: NumberRule[] = [
   { path: 'resolver.douyin.maxVideoDurationSeconds', min: 0, max: 21600 },
   { path: 'runtime.cleanupMaxAgeMinutes', min: 1, max: 10080 },
   { path: 'runtime.downloadTimeoutSeconds', min: 5, max: 600 },
+  { path: 'runtime.maxVideoFileSizeBytes', min: 1 * 1024 * 1024, max: 2 * 1024 * 1024 * 1024 },
+  { path: 'runtime.maxPreviewCoverBytes', min: 64 * 1024, max: 50 * 1024 * 1024 },
+  { path: 'runtime.maxTempBytes', min: 100 * 1024 * 1024, max: 20 * 1024 * 1024 * 1024 },
   { path: 'translate.timeoutSeconds', min: 1, max: 120 },
   { path: 'ai.maxInputChars', min: 1000, max: 200000 }
 ]

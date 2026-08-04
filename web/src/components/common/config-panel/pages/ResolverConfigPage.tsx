@@ -31,7 +31,7 @@ const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: Config
           {renderSwitch(['resolver', 'commentsEnabled'], '发送评论/回复', '开启后微博、贴吧、小黑盒等富解析会额外发送评论或回复转发。')}
           {renderTextField(['resolver', 'priority'], '解析优先级', '修改后需重启 Karin 才能完全生效。', { type: 'number', fallback: 900, min: 0, max: 9999 })}
           {renderTextField(['resolver', 'maxVideoDurationSeconds'], '通用视频上限（分钟）', '平台未单独配置时使用；配置文件中保存为秒，0 表示不限制。', minuteOptions)}
-          {renderTextField(['resolver', 'proxy'], '代理地址', '可选，留空表示不使用代理。')}
+          {renderTextField(['resolver', 'proxy'], '代理地址', '仅用于解析接口和媒体下载；已配置账号密码的代理显示为掩码，直接保存会保留原值。')}
         </>
       ))}
       {renderSubSection('平台开关', (
@@ -80,11 +80,11 @@ const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: Config
       ))}
       {renderSubSection('平台 Cookie（可选）', (
         <>
-          {renderTextField(['resolver', 'cookies', 'weibo'], '微博 Cookie', '用于提升微博解析成功率，留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['resolver', 'cookies', 'xiaoheihe'], '小黑盒 Cookie', '小黑盒部分帖子需要登录态，留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['resolver', 'cookies', 'douyin'], '抖音 Cookie', '用于抖音原生解析，留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['resolver', 'cookies', 'xiaohongshu'], '小红书 Cookie', '小红书原生解析通常需要登录态，留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['resolver', 'cookies', 'bilibili'], 'B站解析 Cookie', '用于 B站视频信息和高画质流获取，留空不会阻止保存。', { type: 'password' })}
+          {renderTextField(['resolver', 'cookies', 'weibo'], '微博 Cookie', '用于提升微博解析成功率；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['resolver', 'cookies', 'xiaoheihe'], '小黑盒 Cookie', '小黑盒部分帖子需要登录态；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['resolver', 'cookies', 'douyin'], '抖音 Cookie', '用于抖音原生解析；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['resolver', 'cookies', 'xiaohongshu'], '小红书 Cookie', '小红书原生解析通常需要登录态；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['resolver', 'cookies', 'bilibili'], 'B站解析 Cookie', '用于 B站视频信息和高画质流获取；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
         </>
       ))}
       <CookieMigrationPanel config={config} device={device} onApplyConfig={onApplyConfig} />

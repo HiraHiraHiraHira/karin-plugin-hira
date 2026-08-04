@@ -1,4 +1,4 @@
-import { fetchJson, fetchText } from '@/services/http'
+import { fetchResolverJson, fetchResolverText } from '@/services/resolverHttp'
 
 import { resolveByGeneralApis } from './general'
 import type { ResolvedPost, ResolverFailure, ResolverResult, RichCommentBlock, RichContentBlock } from './types'
@@ -338,7 +338,7 @@ export const resolveTieba = async (url: string, generalApis: string[], shareMeta
   if (tid) {
     for (const api of tiebaApiUrls(tid)) {
       try {
-        const data = await fetchJson(api)
+        const data = await fetchResolverJson(api)
         if ((data as { post_list?: unknown }).post_list) {
           const hibiResult = normalizeHibiTiebaPost(url, data)
           if (!('ok' in hibiResult)) return hibiResult
@@ -351,7 +351,7 @@ export const resolveTieba = async (url: string, generalApis: string[], shareMeta
     }
 
     try {
-      const html = await fetchText(url)
+      const html = await fetchResolverText(url)
       const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '贴吧帖子')
       const images = imagesFromHtml(html).slice(0, 9)
       return {

@@ -2,7 +2,7 @@ import { Config } from '@/config'
 import { downloadFile } from '@/runtime/downloader'
 import { runFfmpeg } from '@/runtime/ffmpeg'
 import { createTempFilePath } from '@/runtime/temp'
-import { fetchJson } from '@/services/http'
+import { fetchResolverJson, resolveResolverRedirectUrl } from '@/services/resolverHttp'
 import type { ResolverConfig } from '@/types/config'
 
 import { logResolverStage } from './resolverLog'
@@ -140,8 +140,22 @@ const resolveDashVideo = async (media: { videoUrl: string, audioUrl: string }, h
   const output = createTempFilePath('bilibili', 'mp4')
 
   await Promise.all([
-    downloadFile({ url: media.videoUrl, output: videoInput, headers, timeoutMs }),
-    downloadFile({ url: media.audioUrl, output: audioInput, headers, timeoutMs })
+    downloadFile({
+      url: media.videoUrl,
+      output: videoInput,
+      headers,
+      timeoutMs,
+      proxy: Config.resolver.proxy,
+      maxBytes: Config.runtime.maxVideoFileSizeBytes
+    }),
+    downloadFile({
+      url: media.audioUrl,
+      output: audioInput,
+      headers,
+      timeoutMs,
+      proxy: Config.resolver.proxy,
+      maxBytes: Config.runtime.maxVideoFileSizeBytes
+    })
   ])
 
   return runFfmpeg({
@@ -158,7 +172,9 @@ const resolveProgressiveVideo = async (url: string, headers: Record<string, stri
     url,
     output: createTempFilePath('bilibili', 'mp4'),
     headers,
-    timeoutMs
+    timeoutMs,
+    proxy: Config.resolver.proxy,
+    maxBytes: Config.runtime.maxVideoFileSizeBytes
   })
 
   try {
@@ -242,8 +258,7 @@ const expandShortUrl = async (url: string) => {
   const parsed = new URL(url)
   if (parsed.hostname !== 'b23.tv' && parsed.hostname !== 'bili2233.cn') return url
 
-  const response = await fetch(url, { redirect: 'follow' })
-  return response.url || url
+  return resolveResolverRedirectUrl(url)
 }
 
 export const resolveBilibili = async (url: string, cookie = ''): Promise<ResolverResult> => {
@@ -262,7 +277,7 @@ export const resolveBilibili = async (url: string, cookie = ''): Promise<Resolve
   }
   if (cookie) headers.Cookie = cookie
 
-  const payload = await fetchJson(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, { headers })
+  const payload = await fetchResolverJson(`https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, { headers })
   const result = normalizeBilibiliVideoInfo(finalUrl, payload)
   if ('ok' in result) return result
 
@@ -293,7 +308,7 @@ export const resolveBilibili = async (url: string, cookie = ''): Promise<Resolve
   const playUrl = createBilibiliPlayUrl(bvid, String(cid), quality)
   let playPayload: unknown
   try {
-    playPayload = await fetchJson(playUrl, { headers: mediaHeaders })
+    playPayload = await fetchResolverJson(playUrl, { headers: mediaHeaders })
   } catch (error) {
     return fallbackFromMediaFailure(result, error, playUrl)
   }

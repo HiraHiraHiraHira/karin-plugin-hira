@@ -1,4 +1,4 @@
-import { fetchText } from '@/services/http'
+import { fetchResolverText, resolveResolverRedirectUrl } from '@/services/resolverHttp'
 
 import { dedupeImageUrls, selectBestImageUrl } from './media'
 import { logResolverStage } from './resolverLog'
@@ -161,8 +161,7 @@ const parseEmbeddedJson = (html: string) => {
 
 const expandShortUrl = async (url: string) => {
   if (!url.includes('xhslink.com')) return url
-  const response = await fetch(url, { redirect: 'follow' })
-  return response.url || url
+  return resolveResolverRedirectUrl(url)
 }
 
 export const resolveXiaohongshu = async (url: string, cookie = ''): Promise<ResolverResult> => {
@@ -183,7 +182,7 @@ export const resolveXiaohongshu = async (url: string, cookie = ''): Promise<Reso
     return failure('无法识别小红书笔记 ID')
   }
 
-  const html = await fetchText(finalUrl, {
+  const html = await fetchResolverText(finalUrl, {
     headers: {
       Cookie: cookie,
       Referer: 'https://www.xiaohongshu.com/'

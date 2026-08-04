@@ -36,6 +36,21 @@ describe('MusicSessionStore', () => {
     expect(store.select('group:1', 1)).toBeUndefined()
   })
 
+  it('can resolve the TTL from current runtime configuration when creating a session', () => {
+    let now = 1000
+    let ttlMs = 1000
+    const store = new MusicSessionStore({ getTtlMs: () => ttlMs, now: () => now })
+
+    store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
+    ttlMs = 100
+    now = 1501
+    store.set('group:2', [item('b')], { keyword: '晴天', source: 'netease', page: 1 })
+    now = 1602
+
+    expect(store.get('group:1')).toMatchObject({ items: [{ id: 'a' }] })
+    expect(store.get('group:2')).toBeUndefined()
+  })
+
   it('remembers the last selected item', () => {
     const store = new MusicSessionStore({ ttlMs: 1000, now: () => 1000 })
 

@@ -88,7 +88,10 @@ const baseConfig = (): ConfigType => ({
     cleanupMaxAgeMinutes: 120,
     ffmpegPath: 'ffmpeg',
     ffprobePath: 'ffprobe',
-    downloadTimeoutSeconds: 60
+    downloadTimeoutSeconds: 60,
+    maxVideoFileSizeBytes: 200 * 1024 * 1024,
+    maxPreviewCoverBytes: 10 * 1024 * 1024,
+    maxTempBytes: 2 * 1024 * 1024 * 1024
   },
   light: {
     enabled: true,

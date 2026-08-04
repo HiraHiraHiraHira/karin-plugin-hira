@@ -71,7 +71,7 @@ export class NeteaseProvider implements MusicProvider {
 
   async getPlayable(item: MusicItem): Promise<MusicPlayable> {
     const fallbackUrl = isOfficialNeteaseApiBase(this.baseUrl)
-      ? `http://music.163.com/song/media/outer/url?id=${encodeURIComponent(item.id)}`
+      ? `https://music.163.com/song/media/outer/url?id=${encodeURIComponent(item.id)}`
       : undefined
 
     if (this.cookie.includes('MUSIC_U=')) {

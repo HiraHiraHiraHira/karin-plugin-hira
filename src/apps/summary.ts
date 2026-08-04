@@ -14,12 +14,13 @@ export const summary = karin.command(summaryReg, async (e, next) => {
 
   try {
     await replyText(e, '识别：网页总结，正在为您总结，请稍等...')
-    await replyText(e, await summarizeUrl(match[1]))
+    await replyText(e, await summarizeUrl(match[1], String(e.userId || e.selfId)))
   } catch (error) {
     await replyText(e, error instanceof Error ? error.message : String(error))
   }
   return true
 }, {
   name: 'Hira-AI总结',
-  priority: 660
+  priority: 660,
+  perm: 'admin'
 })

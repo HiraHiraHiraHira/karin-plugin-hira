@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 
-import { fetchJson } from '@/services/http'
+import { fetchResolverJson } from '@/services/resolverHttp'
 
 import type { ResolvedPost, ResolverFailure, ResolverResult, RichCommentBlock, RichContentBlock } from './types'
 
@@ -454,7 +454,7 @@ export const resolveXiaoheihe = async (url: string, cookie = ''): Promise<Resolv
   if (!target) return failure('无法识别小黑盒链接类型')
 
   const request = buildXiaoheiheApiRequest(target.type, target.id)
-  const payload = await fetchJson(`${request.url}?${toQueryString(request.params)}`, {
+  const payload = await fetchResolverJson(`${request.url}?${toQueryString(request.params)}`, {
     headers: {
       Cookie: cookie
     }

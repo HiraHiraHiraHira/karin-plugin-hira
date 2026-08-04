@@ -1,11 +1,9 @@
-import { useEffect, type FormEvent } from 'react'
+import { lazy, Suspense, useEffect, type FormEvent } from 'react'
 import { cn, Description, ScrollShadow, Spinner, Surface, Toast } from '@heroui/react'
 import { useMemoizedFn, useSetState } from 'ahooks'
 
 import { loginWithAuthKey } from './auth/request'
 import { authChangedEventName, hasAuthToken } from './auth/token'
-import ConfigPanel from './components/common/ConfigPanel'
-import LoginPanel from './components/common/LoginPanel'
 import { useTheme } from './hooks/useTheme'
 import { detectDevice, type DeviceLayout } from './utils/device'
 
@@ -16,6 +14,16 @@ type RootState = {
 }
 
 const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/'
+
+const ConfigPanel = lazy(() => import('./components/common/ConfigPanel'))
+const LoginPanel = lazy(() => import('./components/common/LoginPanel'))
+
+const LoadingPanel = ({ label }: { label: string }) => (
+  <Surface className="flex min-h-screen items-center justify-center gap-4">
+    <Spinner size="sm" aria-label={label} />
+    <Description>{label}</Description>
+  </Surface>
+)
 
 const App = () => {
   useTheme()
@@ -100,28 +108,34 @@ const App = () => {
   }
 
   if (!state.authenticated) {
-    return <LoginPanel onLogin={handleLogin} />
+    return (
+      <Suspense fallback={<LoadingPanel label="正在加载登录页" />}>
+        <LoginPanel onLogin={handleLogin} />
+      </Suspense>
+    )
   }
 
   return (
-    <Surface className="h-screen overflow-hidden">
-      <Toast.Provider placement="top" />
-      <ScrollShadow
-        hideScrollBar
-        className={cn(
-          'h-full px-3 py-3 sm:px-5 sm:py-4',
-          state.device === 'mobile' && [
-            'data-[top-scroll=true]:[mask-image:none]',
-            'data-[top-scroll=true]:[-webkit-mask-image:none]',
-            'data-[top-bottom-scroll=true]:[mask-image:linear-gradient(180deg,black_calc(100%_-_var(--scroll-shadow-size)),transparent)]',
-            'data-[top-bottom-scroll=true]:[-webkit-mask-image:linear-gradient(180deg,black_calc(100%_-_var(--scroll-shadow-size)),transparent)]'
-          ]
-        )}
-        size={56}
-      >
-        <ConfigPanel device={state.device} variant="karin" />
-      </ScrollShadow>
-    </Surface>
+    <Suspense fallback={<LoadingPanel label="正在加载配置页" />}>
+      <Surface className="h-screen overflow-hidden">
+        <Toast.Provider placement="top" />
+        <ScrollShadow
+          hideScrollBar
+          className={cn(
+            'h-full px-3 py-3 sm:px-5 sm:py-4',
+            state.device === 'mobile' && [
+              'data-[top-scroll=true]:[mask-image:none]',
+              'data-[top-scroll=true]:[-webkit-mask-image:none]',
+              'data-[top-bottom-scroll=true]:[mask-image:linear-gradient(180deg,black_calc(100%_-_var(--scroll-shadow-size)),transparent)]',
+              'data-[top-bottom-scroll=true]:[-webkit-mask-image:linear-gradient(180deg,black_calc(100%_-_var(--scroll-shadow-size)),transparent)]'
+            ]
+          )}
+          size={56}
+        >
+          <ConfigPanel device={state.device} variant="karin" />
+        </ScrollShadow>
+      </Surface>
+    </Suspense>
   )
 }
 

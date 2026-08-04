@@ -10,7 +10,7 @@ import type { MusicItem, MusicSource } from '@/music/types'
 import { transcodePlayableToVoice } from '@/music/voice'
 import { replyMusicList, replyMusicPlayable, replyText, replyVoiceFileOrAudio } from '@/services/message'
 
-const store = new MusicSessionStore({ ttlMs: Config.music.sessionTtlSeconds * 1000 })
+const store = new MusicSessionStore({ getTtlMs: () => Config.music.sessionTtlSeconds * 1000 })
 
 const sessionKey = (e: Message) => {
   const groupPeer = e.isGroup ? e.contact.peer : ''

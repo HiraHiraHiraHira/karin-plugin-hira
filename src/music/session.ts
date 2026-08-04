@@ -8,17 +8,18 @@ type Session = {
 }
 
 type StoreOptions = {
-  ttlMs: number
+  ttlMs?: number
+  getTtlMs?: () => number
   now?: () => number
 }
 
 export class MusicSessionStore {
-  private readonly ttlMs: number
+  private readonly getTtlMs: () => number
   private readonly now: () => number
   private readonly sessions = new Map<string, Session>()
 
   constructor(options: StoreOptions) {
-    this.ttlMs = options.ttlMs
+    this.getTtlMs = options.getTtlMs ?? (() => options.ttlMs ?? 0)
     this.now = options.now ?? Date.now
   }
 
@@ -26,7 +27,7 @@ export class MusicSessionStore {
     this.sessions.set(key, {
       items,
       meta,
-      expiresAt: this.now() + this.ttlMs
+      expiresAt: this.now() + Math.max(0, this.getTtlMs())
     })
   }
 

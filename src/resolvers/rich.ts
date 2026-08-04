@@ -38,7 +38,8 @@ export const toRichResolvedPost = (post: ResolvedPost): RichResolvedPost => {
     })
   }
 
-  for (const video of post.videos) {
+  // The message path intentionally sends only the primary video.
+  for (const video of post.videos.slice(0, 1)) {
     pushMedia({
       type: 'video',
       url: video,

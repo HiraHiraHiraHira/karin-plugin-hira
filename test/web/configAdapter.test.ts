@@ -10,7 +10,7 @@ describe('web config adapter', () => {
     expect(flat['app.enabled']).toBe(true)
     expect(flat['music.defaultSource']).toBe('qq')
     expect(flat['resolver.commentsEnabled']).toBe(true)
-    expect(flat['music.api.neteaseBaseUrl']).toBe('http://music.163.com/api')
+    expect(flat['music.api.neteaseBaseUrl']).toBe('https://music.163.com/api')
     expect(flat['music.cookies.netease']).toBe('')
 
     expect(unflattenConfig({ 'app.enabled': false, 'music.pageSize': 5 })).toEqual({

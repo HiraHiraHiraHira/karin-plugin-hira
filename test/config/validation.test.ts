@@ -32,4 +32,27 @@ describe('Hira config validation', () => {
       'runtime.downloadTimeoutSeconds 必须在 5 到 600 之间'
     ]))
   })
+
+  it('rejects unknown keys and unsafe API URLs while allowing proxy credentials', () => {
+    const invalid = structuredClone(defaultConfig) as typeof defaultConfig & { unexpected?: boolean }
+    invalid.unexpected = true
+    invalid.ai.apiBaseUrl = 'file:///tmp/secret'
+
+    expect(validateHiraConfig(invalid)).toEqual(expect.arrayContaining([
+      'config.unexpected 不是受支持的配置项',
+      'ai.apiBaseUrl 只允许 http 或 https 地址'
+    ]))
+
+    const withAuthenticatedProxy = structuredClone(defaultConfig)
+    withAuthenticatedProxy.resolver.proxy = 'http://user:password@127.0.0.1:7890'
+    expect(validateHiraConfig(withAuthenticatedProxy)).toEqual([])
+  })
+
+  it('returns shape errors instead of throwing on malformed input', () => {
+    expect(() => validateHiraConfig({} as never)).not.toThrow()
+    expect(validateHiraConfig({} as never)).toEqual(expect.arrayContaining([
+      'config.app 不能为空',
+      'config.music 不能为空'
+    ]))
+  })
 })

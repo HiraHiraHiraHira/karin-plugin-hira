@@ -21,11 +21,11 @@ const MusicConfigPage = ({ renderers }: ConfigPageProps) => {
       ))}
       {renderSubSection('音乐 Cookie（可选）', (
         <>
-          {renderTextField(['music', 'cookies', 'netease'], '网易云 Cookie', '留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['music', 'cookies', 'qq'], 'QQ音乐 Cookie', '留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['music', 'cookies', 'kuwo'], '酷我 Cookie', '留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['music', 'cookies', 'kugou'], '酷狗 Cookie', '留空不会阻止保存。', { type: 'password' })}
-          {renderTextField(['music', 'cookies', 'bilibili'], 'B站 Cookie', '用于 B站音乐链接解析，留空不会阻止保存。', { type: 'password' })}
+          {renderTextField(['music', 'cookies', 'netease'], '网易云 Cookie', '已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['music', 'cookies', 'qq'], 'QQ音乐 Cookie', '已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['music', 'cookies', 'kuwo'], '酷我 Cookie', '已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['music', 'cookies', 'kugou'], '酷狗 Cookie', '已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
+          {renderTextField(['music', 'cookies', 'bilibili'], 'B站 Cookie', '用于 B站音乐链接解析；已配置值显示为掩码，直接保存会保留原值，清空后才会删除。', { type: 'password' })}
         </>
       ))}
       {renderSubSection('音乐 API', (

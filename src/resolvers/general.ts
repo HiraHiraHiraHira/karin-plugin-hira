@@ -1,3 +1,5 @@
+import { fetchResolverJson } from '@/services/resolverHttp'
+
 import { dedupeImageUrls } from './media'
 import type { ResolvedPost, ResolverFailure, ResolverPlatform, ResolverResult, RichContentBlock } from './types'
 
@@ -162,10 +164,7 @@ export const normalizeGeneralApiResponse = (
   }
 }
 
-const defaultFetchJson: GeneralFetchJson = async requestUrl => {
-  const response = await fetch(requestUrl)
-  return response.json()
-}
+const defaultFetchJson: GeneralFetchJson = async requestUrl => fetchResolverJson(requestUrl)
 
 const isFetchJson = (value: GeneralNormalizeOptions | GeneralFetchJson | undefined): value is GeneralFetchJson => (
   typeof value === 'function'
@@ -189,7 +188,10 @@ export const resolveByGeneralApis = async (
       if (!('ok' in result)) return result
       lastFailure = result
     } catch (error) {
-      lastFailure = failure(displayName, error instanceof Error ? error.message : String(error), options.platform)
+      const reason = error instanceof Error ? error.message : String(error)
+      let endpointHost = 'unknown'
+      try { endpointHost = new URL(requestUrl).host } catch { /* keep the safe fallback */ }
+      lastFailure = failure(displayName, `api request failed (${endpointHost}): ${reason}`, options.platform)
     }
   }
 

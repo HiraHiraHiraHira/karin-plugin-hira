@@ -25,7 +25,7 @@ describe('toRichResolvedPost', () => {
         'https://img.example.test/a.jpg?imageView2/2/w/240',
         'https://img.example.test/b.jpg'
       ],
-      videos: ['https://video.example.test/a.mp4'],
+      videos: ['https://video.example.test/a.mp4', 'https://video.example.test/b.mp4'],
       extras: {
         coverUrl: 'https://img.example.test/a.jpg?imageView2/2/w/240',
         authorAvatar: 'https://img.example.test/avatar.jpg',
@@ -72,6 +72,7 @@ describe('toRichResolvedPost', () => {
         platform
       }
     })
+    expect(rich.media.filter(item => item.type === 'video')).toHaveLength(1)
     expect(rich.media).toEqual([
       expect.objectContaining({ type: 'cover', url: 'https://img.example.test/a.jpg?imageView2/2/w/240' }),
       expect.objectContaining({ type: 'image', url: 'https://img.example.test/b.jpg' }),

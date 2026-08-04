@@ -84,9 +84,8 @@ const ConfigPanel = ({ device = 'desktop', variant = 'standalone' }: ConfigPanel
     if (!config || hasValidationError) return
 
     const nextConfig = config
-    const nextSnapshot = JSON.stringify(nextConfig)
-    const savePromise = submitConfig(nextConfig).then(() => {
-      setPanelState({ savedSnapshot: nextSnapshot })
+    const savePromise = submitConfig(nextConfig).then((savedConfig) => {
+      setPanelState({ config: savedConfig, savedSnapshot: JSON.stringify(savedConfig) })
     })
 
     toast.promise(savePromise, {

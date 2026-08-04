@@ -24,7 +24,7 @@ export const defaultConfig: HiraConfig = {
       bilibili: ''
     },
     api: {
-      neteaseBaseUrl: 'http://music.163.com/api',
+      neteaseBaseUrl: 'https://music.163.com/api',
       qqTempApi: 'https://www.hhlqilongzhu.cn/api/dg_QQmusicflac.php?msg={keyword}&n={index}&type=json'
     }
   },
@@ -87,7 +87,10 @@ export const defaultConfig: HiraConfig = {
     cleanupMaxAgeMinutes: 120,
     ffmpegPath: 'ffmpeg',
     ffprobePath: 'ffprobe',
-    downloadTimeoutSeconds: 60
+    downloadTimeoutSeconds: 60,
+    maxVideoFileSizeBytes: 200 * 1024 * 1024,
+    maxPreviewCoverBytes: 10 * 1024 * 1024,
+    maxTempBytes: 2 * 1024 * 1024 * 1024
   },
   light: {
     enabled: true,

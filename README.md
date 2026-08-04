@@ -17,7 +17,7 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 - 翻译：`翻中/翻英/翻日/...`，优先 DeepLX，可配置备用接口。
 - AI 总结：`#总结一下 <链接>`，使用 OpenAI 兼容接口。
 - 帮助与配置：`#Hira帮助`、多选点歌列表、`#Hira状态` 和音乐 Cookie 状态优先返回 KKK 风格图片卡片；Karin WebUI 使用自带配置页管理基础、点歌、多平台解析、运行时、轻量功能和 AI 配置。
-- 运行时工具：临时文件清理、下载超时、ffmpeg/ffprobe 路径和语音转码配置。
+- 运行时工具：临时文件清理、下载超时、视频/封面/临时目录容量上限、ffmpeg/ffprobe 路径和语音转码配置。
 
 ## 命令
 
@@ -51,7 +51,7 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 - `app.yaml`：基础开关、回复前缀和命令名。回复前缀只用于普通命令，多平台解析结果不会附加此前缀。
 - `music.yaml`：点歌源、列表会话、语音、高品质、Cookie 和音乐 API。
 - `resolver.yaml`：多平台解析开关、KKK 兼容、平台开关、发送策略、媒体策略、诊断日志、B站/抖音下载上限、画质、编码、Cookie 和通用解析 API。
-- `runtime.yaml`：临时目录、自动清理、ffmpeg/ffprobe、下载超时。
+- `runtime.yaml`：临时目录、自动清理、ffmpeg/ffprobe、下载超时，以及单个媒体、预览封面和临时目录容量上限。
 - `light.yaml`：轻量命令使用的外部 API。
 - `translate.yaml`：翻译接口。
 - `ai.yaml`：OpenAI 兼容接口、模型和网页总结开关。
@@ -61,6 +61,14 @@ Karin WebUI 会打开 Hira 自带配置页 `/hira/karin-config`。配置页使�
 解析配置里可以单独关闭 B站、抖音、快手、微博、贴吧、小黑盒、小红书或通用解析；关闭后对应链接会交还给后续插件或 Karin 默认流程。发送策略可以关闭正文伪装合并转发，或关闭视频发送失败后的原链接提示。媒体策略默认会去重图片、过滤缩略图/模糊图/马赛克图，并尝试内联预览封面以减少防盗链缺图。诊断日志默认记录解析阶段，关闭“成功阶段日志”后仍会保留失败告警。
 
 小黑盒解析需要在 `resolver.cookies.xiaoheihe` 配置 Cookie。AI 总结默认关闭，需要在配置面板或 `ai.yaml` 启用并填写 API Key。代理和各平台 Cookie 都是可选项，留空不会阻止保存。
+
+配置保存会先做完整结构、类型、枚举和 URL 校验；Cookie、代理账号密码、DeepLX 地址和 AI Key 在 WebUI/API 响应中会显示为 `********`，提交原掩码会保留旧值，提交空字符串才会清空。配置文件使用同目录临时文件、刷盘和替换写入，避免进程中断时留下半份 YAML。
+
+运行时默认限制：单个视频/音频 200 MiB、预览封面 10 MiB、临时目录 2 GiB。下载超过限制会中止并删除 `.part-*` 半成品；临时目录超限时按最旧文件优先清理。一个作品只保留并发送主视频，避免多视频作品造成重复下载和刷屏。
+
+resolver 代理只用于平台解析 API、短链跳转、预览封面和媒体下载，不会自动套用到音乐、轻量 API 或 AI 接口。默认网易云入口和播放回退地址已改为 HTTPS；通用解析列表中仍保留没有可信 HTTPS 替代的旧端点，用户可以在自定义配置中覆盖。解析失败提示会显示失败服务的主机名和下一步建议，但不会回显 Cookie、代理密码或完整授权信息。
+
+AI 网页总结仅开放给 owner/admin，输入地址必须是 HTTP(S) 公网网页；会拒绝回环、内网、链路本地、云元数据和带账号密码的 URL，限制重定向和网页大小，并按请求人限流。
 
 `#Hira帮助`、多选点歌列表、`#Hira状态` 和音乐 Cookie 状态的图片卡片依赖 Karin 渲染器。若运行实例未安装 `@karinjs/plugin-puppeteer`，插件会记录渲染失败日志并退回文本。
 
@@ -82,6 +90,7 @@ Karin WebUI 会打开 Hira 自带配置页 `/hira/karin-config`。配置页使�
 pnpm test
 pnpm typecheck
 pnpm build
+pnpm verify:ci
 ```
 
-`pnpm build` 会先构建 Web 配置页到 `resources/web/`，再构建 Karin 插件运行时代码。
+`pnpm build` 会先构建 Web 配置页到 `resources/web/`，再构建 Karin 插件运行时代码。`pnpm verify:ci` 会串行执行类型检查、测试、构建和 `pnpm pack --dry-run`；发布前的人工检查见 [`docs/release-checklist.md`](docs/release-checklist.md)。

@@ -15,3 +15,12 @@ ffprobePath: "ffprobe"
 
 # 下载超时时间，单位秒
 downloadTimeoutSeconds: 60
+
+# 单个视频/音频媒体文件下载上限，单位字节；默认 200 MiB。
+maxVideoFileSizeBytes: 209715200
+
+# 预览封面内联上限，单位字节；默认 10 MiB。
+maxPreviewCoverBytes: 10485760
+
+# 临时目录总容量上限，单位字节；默认 2 GiB。超出后优先清理最旧文件。
+maxTempBytes: 2147483648

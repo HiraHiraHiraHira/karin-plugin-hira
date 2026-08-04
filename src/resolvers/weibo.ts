@@ -1,4 +1,4 @@
-import { fetchJson, fetchText } from '@/services/http'
+import { fetchResolverJson, fetchResolverText } from '@/services/resolverHttp'
 
 import type { ResolvedPost, ResolverResult, RichCommentBlock, RichContentBlock } from './types'
 
@@ -279,7 +279,7 @@ const enrichWeiboLongText = async (
 ) => {
   if (!status.isLongText || status.longTextContent || status.longText?.longTextContent || status.long_text?.longTextContent) return status
   try {
-    const payload = await fetchJson<{ data?: { longTextContent?: string } }>(`https://m.weibo.cn/statuses/extend?id=${encodeURIComponent(id)}`, {
+    const payload = await fetchResolverJson<{ data?: { longTextContent?: string } }>(`https://m.weibo.cn/statuses/extend?id=${encodeURIComponent(id)}`, {
       headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
     })
     const longTextContent = payload.data?.longTextContent
@@ -299,14 +299,14 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
   try {
     let status: Record<string, any> | undefined
     try {
-      const html = await fetchText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
+      const html = await fetchResolverText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
       status = extractWeiboStatusFromDetailHtml(html)
     } catch {
       status = undefined
     }
 
     if (!status) {
-      const data = await fetchJson<{ data?: Record<string, any> }>(`https://m.weibo.cn/statuses/show?id=${encodeURIComponent(id)}`, {
+      const data = await fetchResolverJson<{ data?: Record<string, any> }>(`https://m.weibo.cn/statuses/show?id=${encodeURIComponent(id)}`, {
         headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
       })
       status = data.data
@@ -317,7 +317,7 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
 
     let comments: string[] = []
     try {
-      const commentData = await fetchJson(`https://m.weibo.cn/comments/hotflow?id=${encodeURIComponent(requestId)}&mid=${encodeURIComponent(requestId)}&max_id_type=0`, {
+      const commentData = await fetchResolverJson(`https://m.weibo.cn/comments/hotflow?id=${encodeURIComponent(requestId)}&mid=${encodeURIComponent(requestId)}&max_id_type=0`, {
         headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
       })
       comments = normalizeWeiboComments(commentData)
@@ -327,7 +327,7 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
 
     return normalizeWeiboStatus(url, status, comments)
   } catch {
-    const html = await fetchText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
+    const html = await fetchResolverText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
     const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '微博')
     return {
       platform: 'weibo',

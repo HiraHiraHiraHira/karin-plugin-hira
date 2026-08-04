@@ -1,5 +1,9 @@
 import { Buffer } from 'node:buffer'
 
+import { Config } from '@/config'
+import { readResponseBytes } from '@/services/http'
+import { fetchResolverResponse } from '@/services/resolverHttp'
+
 import type { ResolvedPost, ResolverPlatform } from '@/resolvers/types'
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
@@ -18,11 +22,24 @@ const contentTypeFromUrl = (url: string) => {
   return 'image/jpeg'
 }
 
+const headersFromInit = (headers: HeadersInit | undefined) => {
+  if (!headers) return undefined
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  return headers
+}
+
+const defaultCoverFetcher: FetchLike = (url, init) => fetchResolverResponse(url, {
+  headers: headersFromInit(init?.headers),
+  signal: init?.signal ?? undefined,
+  maxBytes: Config.runtime.maxPreviewCoverBytes
+})
+
 const coverFetchTimeoutMs = 8000
 
 export const inlinePreviewCover = async (
   post: ResolvedPost,
-  fetcher: FetchLike = fetch
+  fetcher: FetchLike = defaultCoverFetcher
 ): Promise<ResolvedPost> => {
   const coverUrl = post.extras?.coverUrl || post.images[0]
   if (!coverUrl || renderableUrlRegExp.test(coverUrl)) return post
@@ -42,13 +59,16 @@ export const inlinePreviewCover = async (
     })
     if (!response.ok) return post
 
-    const bytes = Buffer.from(await response.arrayBuffer())
-    const contentType = response.headers.get('content-type')?.split(';')[0] || contentTypeFromUrl(coverUrl)
+    const headerContentType = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase()
+    if (headerContentType && !headerContentType.startsWith('image/')) return post
+
+    const bytes = await readResponseBytes(response, Config.runtime.maxPreviewCoverBytes)
+    const contentType = headerContentType || contentTypeFromUrl(coverUrl)
     return {
       ...post,
       extras: {
         ...post.extras,
-        coverUrl: `data:${contentType};base64,${bytes.toString('base64')}`
+        coverUrl: `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`
       }
     }
   } catch {

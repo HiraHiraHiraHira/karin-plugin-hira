@@ -10,9 +10,8 @@ export const getConfig = async (): Promise<ConfigType> => {
   throw new Error(response.data.message || '获取配置失败')
 }
 
-export const saveConfig = async (config: ConfigType): Promise<void> => {
-  const response = await authClient.post<ApiResponse>(`${API_BASE_URL}/config`, config)
-  if (!response.data.success) {
-    throw new Error(response.data.message || '保存配置失败')
-  }
+export const saveConfig = async (config: ConfigType): Promise<ConfigType> => {
+  const response = await authClient.post<ApiResponse<ConfigType>>(`${API_BASE_URL}/config`, config)
+  if (response.data.success && response.data.data) return response.data.data
+  throw new Error(response.data.message || '保存配置失败')
 }

@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { cleanupOldFiles, ensureTempDir, isSubPath } from '@/runtime/temp'
+import { cleanupOldFiles, ensureTempDir, getTempUsageBytes, isSubPath } from '@/runtime/temp'
 
 describe('runtime temp helpers', () => {
   it('creates named temp directories under the configured root', () => {
@@ -14,6 +14,15 @@ describe('runtime temp helpers', () => {
     expect(fs.existsSync(dir)).toBe(true)
     expect(isSubPath(root, dir)).toBe(true)
     expect(path.basename(dir)).toBe('music')
+  })
+
+  it('reports the total size of files under the temp root', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hira-usage-'))
+    fs.writeFileSync(path.join(root, 'a.tmp'), '123')
+    fs.mkdirSync(path.join(root, 'nested'))
+    fs.writeFileSync(path.join(root, 'nested', 'b.tmp'), '12345')
+
+    expect(getTempUsageBytes(root)).toBe(8)
   })
 
   it('only cleans files older than the cutoff and reports deleted counts', () => {

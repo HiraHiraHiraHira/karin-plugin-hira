@@ -1,3 +1,5 @@
+import { resolveResolverRedirectUrl } from '@/services/resolverHttp'
+
 import { resolveByGeneralApis } from './general'
 import type { ResolverResult } from './types'
 
@@ -22,8 +24,7 @@ export const normalizeKuaishouUrl = async (
 
 export const resolveKuaishou = async (url: string, generalApis: string[]): Promise<ResolverResult> => {
   const normalized = await normalizeKuaishouUrl(url, async input => {
-    const response = await fetch(input, { redirect: 'follow' })
-    return response.url || input
+    return resolveResolverRedirectUrl(input)
   })
 
   if (!normalized) {

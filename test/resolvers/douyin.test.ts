@@ -63,6 +63,39 @@ describe('douyin resolver helpers', () => {
     expect('ok' in result).toBe(false)
   })
 
+  it('keeps Douyin Live Photo galleries as static images instead of downloading embedded clips', () => {
+    const result = normalizeDouyinDetail('https://www.douyin.com/note/739', {
+      aweme_detail: {
+        desc: 'Live Photo 图集',
+        is_slides: true,
+        images: [
+          {
+            clip_type: 5,
+            url_list: ['https://img/live-1.webp', 'https://img/live-1-large.webp'],
+            video: {
+              play_addr_h264: { uri: 'v0200fg10000live1' }
+            }
+          },
+          {
+            clip_type: 5,
+            url_list: ['https://img/live-2.webp'],
+            video: {
+              play_addr: { url_list: ['https://v3.douyinvod.com/video/tos/cn/live-2.mp4'] }
+            }
+          }
+        ]
+      }
+    })
+
+    expect(result).toMatchObject({
+      platform: 'douyin',
+      title: 'Live Photo 图集',
+      images: ['https://img/live-1.webp', 'https://img/live-2.webp'],
+      videos: []
+    })
+    expect('ok' in result).toBe(false)
+  })
+
   it('selects KKK-style bit_rate mp4 urls by configured quality and filters bgm audio urls', () => {
     const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
       aweme_detail: {

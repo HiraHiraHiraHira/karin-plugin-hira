@@ -2,7 +2,7 @@ import { Config } from '@/config'
 import { downloadFile } from '@/runtime/downloader'
 import { runFfmpeg } from '@/runtime/ffmpeg'
 import { createTempFilePath } from '@/runtime/temp'
-import { fetchJson } from '@/services/http'
+import { fetchResolverJson, resolveResolverRedirectUrl } from '@/services/resolverHttp'
 import type { ResolverConfig } from '@/types/config'
 
 import { isLikelyVideoUrl, resolveByGeneralApis } from './general'
@@ -40,6 +40,11 @@ const pushUnique = (items: string[], value: unknown) => {
 const pushUniqueVideo = (items: string[], value: unknown) => {
   const url = firstVideoUrl(value)
   if (url && !items.includes(url)) items.push(url)
+}
+
+const isDouyinStaticImage = (image: Record<string, any>) => {
+  const clipType = Number(image.clip_type)
+  return image.clip_type === undefined || clipType === 2
 }
 
 type DouyinQuality = ResolverConfig['douyin']['quality']
@@ -219,7 +224,7 @@ export const normalizeDouyinDetail = (
   for (const image of Array.isArray(detail.images) ? detail.images : []) {
     pushUnique(images, image?.url_list)
     const imageVideo = asObject(image?.video)
-    if (imageVideo) pushUniqueVideo(videos, selectDouyinVideoUrl(imageVideo, quality))
+    if (imageVideo && isDouyinStaticImage(image)) pushUniqueVideo(videos, selectDouyinVideoUrl(imageVideo, quality))
   }
 
   const video = asObject(detail.video)
@@ -254,8 +259,7 @@ export const normalizeDouyinDetail = (
 
 const expandShortUrl = async (url: string) => {
   if (!url.includes('v.douyin.com')) return url
-  const response = await fetch(url, { redirect: 'follow' })
-  return response.url || url
+  return resolveResolverRedirectUrl(url)
 }
 
 const downloadDouyinVideos = async (result: ResolvedPost, headers: Record<string, string>) => {
@@ -264,13 +268,16 @@ const downloadDouyinVideos = async (result: ResolvedPost, headers: Record<string
   const timeoutMs = Math.max(10, Config.runtime.downloadTimeoutSeconds) * 1000
   const videos: string[] = []
   let failedDownloads = 0
-  for (const videoUrl of result.videos) {
+  // Keep the established one-video delivery policy; extra URLs remain only as resolver candidates.
+  for (const videoUrl of result.videos.slice(0, 1)) {
     try {
       const rawVideo = await downloadFile({
         url: videoUrl,
         output: createTempFilePath('douyin', 'mp4'),
         headers,
-        timeoutMs
+        timeoutMs,
+        proxy: Config.resolver.proxy,
+        maxBytes: Config.runtime.maxVideoFileSizeBytes
       })
       try {
         videos.push(await runFfmpeg({
@@ -338,7 +345,7 @@ export const resolveDouyin = async (
         Cookie: cookie
       }
       const requestUrl = createDouyinDetailUrl(awemeId)
-      const result = normalizeDouyinDetail(finalUrl, await fetchJson(requestUrl, { headers }), {
+      const result = normalizeDouyinDetail(finalUrl, await fetchResolverJson(requestUrl, { headers }), {
         quality: normalizeQuality(douyinConfig?.quality),
         maxVideoDurationSeconds: douyinConfig?.maxVideoDurationSeconds ?? Config.resolver.maxVideoDurationSeconds
       })

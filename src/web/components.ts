@@ -55,6 +55,10 @@ export const webFieldPathMap: Record<string, string> = {
   runtimeTempRoot: 'runtime.tempRoot',
   runtimeCleanupEnabled: 'runtime.cleanupEnabled',
   runtimeCleanupMaxAgeMinutes: 'runtime.cleanupMaxAgeMinutes',
+  runtimeDownloadTimeoutSeconds: 'runtime.downloadTimeoutSeconds',
+  runtimeMaxVideoFileSizeBytes: 'runtime.maxVideoFileSizeBytes',
+  runtimeMaxPreviewCoverBytes: 'runtime.maxPreviewCoverBytes',
+  runtimeMaxTempBytes: 'runtime.maxTempBytes',
   runtimeFfmpegPath: 'runtime.ffmpegPath',
   runtimeFfprobePath: 'runtime.ffprobePath',
   lightEnabled: 'light.enabled',
@@ -205,11 +209,15 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
         }),
         accordionItem.create('hiraRuntime', {
           title: '运行时工具',
-          subtitle: '管理临时目录、缓存清理和 ffmpeg/ffprobe 路径。',
+          subtitle: '管理临时目录、缓存清理、下载上限和 ffmpeg/ffprobe 路径。',
           children: [
             createOptionalStringInput('runtimeTempRoot', '临时目录', config.runtime.tempRoot, '可选，留空时使用插件默认数据目录。'),
             createSwitch('runtimeCleanupEnabled', '自动清理临时文件', config.runtime.cleanupEnabled, '开启后定期删除过期下载缓存。'),
-            input.number('runtimeCleanupMaxAgeMinutes', { label: '保留分钟数', description: '临时文件保留多久后可被清理。', defaultValue: String(config.runtime.cleanupMaxAgeMinutes), rules: [{ min: 1, max: 10080 }] }),
+            input.number('runtimeCleanupMaxAgeMinutes', { label: '保留分钟数', description: '临时文件保留多久后可被清理；容量超限时仍按最旧文件优先清理。', defaultValue: String(config.runtime.cleanupMaxAgeMinutes), rules: [{ min: 1, max: 10080 }] }),
+            input.number('runtimeDownloadTimeoutSeconds', { label: '下载超时（秒）', description: '解析视频、图片等外部资源下载时的超时时间。', defaultValue: String(config.runtime.downloadTimeoutSeconds), rules: [{ min: 5, max: 600 }] }),
+            input.number('runtimeMaxVideoFileSizeBytes', { label: '单个媒体上限（字节）', description: '单个视频或音频下载的最大体积；默认 209715200 字节（200 MiB）。', defaultValue: String(config.runtime.maxVideoFileSizeBytes), rules: [{ min: 1048576, max: 2147483648 }] }),
+            input.number('runtimeMaxPreviewCoverBytes', { label: '预览封面上限（字节）', description: '内联预览封面允许下载的最大体积；默认 10485760 字节（10 MiB）。', defaultValue: String(config.runtime.maxPreviewCoverBytes), rules: [{ min: 65536, max: 52428800 }] }),
+            input.number('runtimeMaxTempBytes', { label: '临时目录上限（字节）', description: '超过上限后按最旧文件优先清理；默认 2147483648 字节（2 GiB）。', defaultValue: String(config.runtime.maxTempBytes), rules: [{ min: 104857600, max: 21474836480 }] }),
             input.string('runtimeFfmpegPath', { label: 'ffmpeg 路径', description: '用于合并 B站 DASH 视频和音频。', defaultValue: config.runtime.ffmpegPath }),
             input.string('runtimeFfprobePath', { label: 'ffprobe 路径', description: '预留给后续媒体信息检测。', defaultValue: config.runtime.ffprobePath })
           ]
