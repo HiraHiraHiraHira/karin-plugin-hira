@@ -11,5 +11,6 @@
 
 ### Changed
 
+- Removed hard-coded Bilibili music app credentials; they now come from Karin configuration or environment variables and are masked in WebUI/API responses.
 - Upgraded the known网易云默认 API and playback fallback URLs to HTTPS while retaining user-configured endpoint overrides.
 - Kept resolver failure messages actionable by including the failed endpoint host without exposing cookies or credentials.

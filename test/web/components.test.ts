@@ -28,6 +28,7 @@ describe('createWebConfigComponents', () => {
 
     expect(serialized).toContain('appEnabled')
     expect(serialized).toContain('musicDefaultSource')
+    expect(serialized).toContain('musicBilibiliAppSecret')
     expect(serialized).toContain('resolverKkkCompat')
     expect(serialized).toContain('resolverPlatformBilibili')
     expect(serialized).toContain('resolverPlatformXiaohongshu')

@@ -22,6 +22,11 @@ highQuality: false
 # 发送音频失败时是否回退到文本链接
 textFallback: true
 
+# B站音乐移动端 App 凭据；留空时可改用环境变量，未配置则无法使用 B站点歌搜索/播放
+bilibili:
+  appKey: ""
+  appSecret: ""
+
 # Cookie
 cookies:
   netease: ""

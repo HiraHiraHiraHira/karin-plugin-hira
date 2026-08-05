@@ -7,6 +7,8 @@ describe('sensitive config handling', () => {
   it('masks secrets without mutating the source and restores unchanged masked fields', () => {
     const config = structuredClone(defaultConfig)
     config.music.cookies.netease = 'MUSIC_U=secret'
+    config.music.bilibili.appKey = 'test-app-key'
+    config.music.bilibili.appSecret = 'test-app-secret'
     config.resolver.proxy = 'http://user:password@127.0.0.1:7890'
     config.resolver.cookies.bilibili = 'SESSDATA=secret'
     config.translate.deeplxApi = 'https://translate.example.test/secret'
@@ -15,6 +17,8 @@ describe('sensitive config handling', () => {
     const masked = maskSensitiveConfig(config)
 
     expect(masked.music.cookies.netease).toBe(SENSITIVE_CONFIG_MASK)
+    expect(masked.music.bilibili.appKey).toBe(SENSITIVE_CONFIG_MASK)
+    expect(masked.music.bilibili.appSecret).toBe(SENSITIVE_CONFIG_MASK)
     expect(masked.resolver.proxy).toBe(SENSITIVE_CONFIG_MASK)
     expect(masked.resolver.cookies.bilibili).toBe(SENSITIVE_CONFIG_MASK)
     expect(masked.translate.deeplxApi).toBe(SENSITIVE_CONFIG_MASK)

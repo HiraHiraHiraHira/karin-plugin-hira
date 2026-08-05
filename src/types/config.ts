@@ -16,6 +16,10 @@ export type MusicConfig = {
   voiceEnabled: boolean
   highQuality: boolean
   textFallback: boolean
+  bilibili: {
+    appKey: string
+    appSecret: string
+  }
   cookies: {
     netease: string
     qq: string

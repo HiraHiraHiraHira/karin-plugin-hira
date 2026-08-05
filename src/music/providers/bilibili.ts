@@ -7,6 +7,8 @@ import { normalizeDuration } from './helpers'
 
 type BilibiliProviderOptions = {
   cookie?: string
+  appKey?: string
+  appSecret?: string
   fetchJson?: typeof fetchJson
 }
 
@@ -56,7 +58,6 @@ type BilibiliPlayUrl = {
 }
 
 const bvPattern = /\bBV[1-9A-HJ-NP-Za-km-z]{10}\b/
-const bilibiliAppSecret = '560c52ccd288fed045859ed18bffd973'
 const bilibiliAppHeaders = {
   'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 12; MI 9 Build/SKQ1.211230.001)'
 }
@@ -68,18 +69,18 @@ const normalizeCover = (url: string | undefined) => {
   return url.startsWith('//') ? `https:${url}` : url
 }
 
-const signedBilibiliAppUrl = (url: string, params: Record<string, string | number>) => {
+const signedBilibiliAppUrl = (url: string, params: Record<string, string | number>, appSecret: string) => {
   const param = Object.entries(params)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}=${value}`)
     .join('&')
-  const sign = createHash('md5').update(`${param}${bilibiliAppSecret}`).digest('hex')
+  const sign = createHash('md5').update(`${param}${appSecret}`).digest('hex')
   return `${url}?${param}&sign=${sign}`
 }
 
-const bilibiliAppParams = (extra: Record<string, string | number>) => ({
+const bilibiliAppParams = (appKey: string, extra: Record<string, string | number>) => ({
   access_key: '',
-  appkey: '1d8b6e7d45233436',
+  appkey: appKey,
   build: 7210300,
   buvid: 'XU973E09237CC101E74F6E24CCF3DE3300D0B',
   c_locale: 'zh_CN',
@@ -126,11 +127,22 @@ export const selectBilibiliAudio = (payload: BilibiliPlayUrl) => {
 export class BilibiliMusicProvider implements MusicProvider {
   readonly source = 'bilibili' as const
   private readonly cookie: string
+  private readonly appKey: string
+  private readonly appSecret: string
   private readonly requestJson: typeof fetchJson
 
   constructor(options: BilibiliProviderOptions = {}) {
     this.cookie = options.cookie ?? ''
+    this.appKey = options.appKey?.trim() || process.env.HIRA_BILIBILI_APP_KEY?.trim() || ''
+    this.appSecret = options.appSecret?.trim() || process.env.HIRA_BILIBILI_APP_SECRET?.trim() || ''
     this.requestJson = options.fetchJson ?? fetchJson
+  }
+
+  private signedAppUrl(url: string, extra: Record<string, string | number>) {
+    if (!this.appKey || !this.appSecret) {
+      throw new Error('B站音乐需要配置 music.bilibili.appKey 和 music.bilibili.appSecret，或设置 HIRA_BILIBILI_APP_KEY/HIRA_BILIBILI_APP_SECRET')
+    }
+    return signedBilibiliAppUrl(url, bilibiliAppParams(this.appKey, extra), this.appSecret)
   }
 
   private requestOptions(referer?: string) {
@@ -144,12 +156,12 @@ export class BilibiliMusicProvider implements MusicProvider {
   }
 
   async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
-    const url = signedBilibiliAppUrl('https://app.bilibili.com/x/v2/search/type', bilibiliAppParams({
+    const url = this.signedAppUrl('https://app.bilibili.com/x/v2/search/type', {
       keyword: encodeURIComponent(keyword),
       type: 10,
       pn: page,
       ps: pageSize
-    }))
+    })
     const data = await this.requestJson<{ data?: { items?: BilibiliAppSearchItem[] } }>(url, this.requestOptions())
 
     return (data.data?.items ?? [])
@@ -192,10 +204,10 @@ export class BilibiliMusicProvider implements MusicProvider {
       throw new Error('B站音频解析需要 aid 和 cid，请使用 音乐 <B站链接> 或重新搜索')
     }
 
-    const playUrl = signedBilibiliAppUrl('https://api.bilibili.com/x/tv/playurl', bilibiliAppParams({
+    const playUrl = this.signedAppUrl('https://api.bilibili.com/x/tv/playurl', {
       cid: info.cid,
       object_id: info.aid
-    }))
+    })
     const data = await this.requestJson<BilibiliPlayUrl>(playUrl, { defaultHeaders: false })
     const audio = selectBilibiliAudio(data)
     if (!audio) throw new Error('B站未返回可用音频流')

@@ -25,9 +25,28 @@ describe('selectBilibiliAudio', () => {
 })
 
 describe('BilibiliMusicProvider getPlayable', () => {
+  it('fails clearly when app credentials are missing', async () => {
+    const previousAppKey = process.env.HIRA_BILIBILI_APP_KEY
+    const previousAppSecret = process.env.HIRA_BILIBILI_APP_SECRET
+    delete process.env.HIRA_BILIBILI_APP_KEY
+    delete process.env.HIRA_BILIBILI_APP_SECRET
+
+    try {
+      const provider = new BilibiliMusicProvider()
+      await expect(provider.search('测试', 1, 1)).rejects.toThrow('music.bilibili.appKey')
+    } finally {
+      if (previousAppKey === undefined) delete process.env.HIRA_BILIBILI_APP_KEY
+      else process.env.HIRA_BILIBILI_APP_KEY = previousAppKey
+      if (previousAppSecret === undefined) delete process.env.HIRA_BILIBILI_APP_SECRET
+      else process.env.HIRA_BILIBILI_APP_SECRET = previousAppSecret
+    }
+  })
+
   it('searches with the signed app API and maps bilibili video items', async () => {
     const requests: string[] = []
     const provider = new BilibiliMusicProvider({
+      appKey: 'test-app-key',
+      appSecret: 'test-app-secret',
       fetchJson: async (url) => {
         requests.push(url)
         return {
@@ -72,6 +91,8 @@ describe('BilibiliMusicProvider getPlayable', () => {
     const requests: string[] = []
     const options: unknown[] = []
     const provider = new BilibiliMusicProvider({
+      appKey: 'test-app-key',
+      appSecret: 'test-app-secret',
       fetchJson: async (url, requestOptions) => {
         requests.push(url)
         options.push(requestOptions)

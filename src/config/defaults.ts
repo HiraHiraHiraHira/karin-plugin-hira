@@ -16,6 +16,10 @@ export const defaultConfig: HiraConfig = {
     voiceEnabled: true,
     highQuality: false,
     textFallback: true,
+    bilibili: {
+      appKey: '',
+      appSecret: ''
+    },
     cookies: {
       netease: '',
       qq: '',

@@ -18,7 +18,11 @@ export const createMusicProviders = () => {
   providers.set('qq', new QQProvider({ tempApi: music.api.qqTempApi, cookie: music.cookies.qq }))
   providers.set('kuwo', new KuwoProvider())
   providers.set('kugou', new KugouProvider())
-  providers.set('bilibili', new BilibiliMusicProvider({ cookie: music.cookies.bilibili }))
+  providers.set('bilibili', new BilibiliMusicProvider({
+    cookie: music.cookies.bilibili,
+    appKey: music.bilibili.appKey,
+    appSecret: music.bilibili.appSecret
+  }))
 
   return providers
 }

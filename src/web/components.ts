@@ -18,6 +18,8 @@ export const webFieldPathMap: Record<string, string> = {
   musicCookiesNetease: 'music.cookies.netease',
   musicCookiesQq: 'music.cookies.qq',
   musicCookiesBilibili: 'music.cookies.bilibili',
+  musicBilibiliAppKey: 'music.bilibili.appKey',
+  musicBilibiliAppSecret: 'music.bilibili.appSecret',
   resolverEnabled: 'resolver.enabled',
   resolverKkkCompat: 'resolver.kkkCompat',
   resolverCommentsEnabled: 'resolver.commentsEnabled',
@@ -167,7 +169,9 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
             input.number('musicSessionTtlSeconds', { label: '会话有效期秒数', description: '多选列表保留多久可继续用序号选择。', defaultValue: String(config.music.sessionTtlSeconds), rules: [{ min: 30, max: 3600 }] }),
             createOptionalStringInput('musicCookiesNetease', '网易云 Cookie', config.music.cookies.netease, '可选，留空时使用公开接口能力。'),
             createOptionalStringInput('musicCookiesQq', 'QQ音乐 Cookie', config.music.cookies.qq, '可选，用于需要登录态的 QQ 音乐能力。'),
-            createOptionalStringInput('musicCookiesBilibili', 'B站 Cookie', config.music.cookies.bilibili, '可选，用于 B站音乐链接解析。')
+            createOptionalStringInput('musicCookiesBilibili', 'B站 Cookie', config.music.cookies.bilibili, '可选，用于 B站音乐链接解析。'),
+            createOptionalStringInput('musicBilibiliAppKey', 'B站 App Key', config.music.bilibili.appKey, '可选；也可以使用环境变量 HIRA_BILIBILI_APP_KEY。'),
+            createOptionalStringInput('musicBilibiliAppSecret', 'B站 App Secret', config.music.bilibili.appSecret, '可选；也可以使用环境变量 HIRA_BILIBILI_APP_SECRET。不要把真实值提交到 Git。')
           ]
         }),
         accordionItem.create('hiraResolver', {

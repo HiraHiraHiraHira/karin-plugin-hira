@@ -49,7 +49,7 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 默认配置在 `config/default_config/`：
 
 - `app.yaml`：基础开关、回复前缀和命令名。回复前缀只用于普通命令，多平台解析结果不会附加此前缀。
-- `music.yaml`：点歌源、列表会话、语音、高品质、Cookie 和音乐 API。
+- `music.yaml`：点歌源、列表会话、语音、高品质、B站音乐 App 凭据、Cookie 和音乐 API。
 - `resolver.yaml`：多平台解析开关、KKK 兼容、平台开关、发送策略、媒体策略、诊断日志、B站/抖音下载上限、画质、编码、Cookie 和通用解析 API。
 - `runtime.yaml`：临时目录、自动清理、ffmpeg/ffprobe、下载超时，以及单个媒体、预览封面和临时目录容量上限。
 - `light.yaml`：轻量命令使用的外部 API。
@@ -60,9 +60,9 @@ Karin WebUI 会打开 Hira 自带配置页 `/hira/karin-config`。配置页使�
 
 解析配置里可以单独关闭 B站、抖音、快手、微博、贴吧、小黑盒、小红书或通用解析；关闭后对应链接会交还给后续插件或 Karin 默认流程。发送策略可以关闭正文伪装合并转发，或关闭视频发送失败后的原链接提示。媒体策略默认会去重图片、过滤缩略图/模糊图/马赛克图，并尝试内联预览封面以减少防盗链缺图。诊断日志默认记录解析阶段，关闭“成功阶段日志”后仍会保留失败告警。
 
-小黑盒解析需要在 `resolver.cookies.xiaoheihe` 配置 Cookie。AI 总结默认关闭，需要在配置面板或 `ai.yaml` 启用并填写 API Key。代理和各平台 Cookie 都是可选项，留空不会阻止保存。
+小黑盒解析需要在 `resolver.cookies.xiaoheihe` 配置 Cookie。B站点歌搜索和播放需要在 `music.yaml` 的 `bilibili.appKey`、`bilibili.appSecret` 中配置凭据，也可以使用 `HIRA_BILIBILI_APP_KEY`、`HIRA_BILIBILI_APP_SECRET` 环境变量；默认留空时不会影响其他音乐源和普通 B站链接解析。AI 总结默认关闭，需要在配置面板或 `ai.yaml` 启用并填写 API Key。代理和各平台 Cookie 都是可选项，留空不会阻止保存。
 
-配置保存会先做完整结构、类型、枚举和 URL 校验；Cookie、代理账号密码、DeepLX 地址和 AI Key 在 WebUI/API 响应中会显示为 `********`，提交原掩码会保留旧值，提交空字符串才会清空。配置文件使用同目录临时文件、刷盘和替换写入，避免进程中断时留下半份 YAML。
+配置保存会先做完整结构、类型、枚举和 URL 校验；Cookie、代理账号密码、B站音乐 App 凭据、DeepLX 地址和 AI Key 在 WebUI/API 响应中会显示为 `********`，提交原掩码会保留旧值，提交空字符串才会清空。配置文件使用同目录临时文件、刷盘和替换写入，避免进程中断时留下半份 YAML。
 
 运行时默认限制：单个视频/音频 200 MiB、预览封面 10 MiB、临时目录 2 GiB。下载超过限制会中止并删除 `.part-*` 半成品；临时目录超限时按最旧文件优先清理。一个作品只保留并发送主视频，避免多视频作品造成重复下载和刷屏。
 
