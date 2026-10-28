@@ -20,6 +20,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/release-checklist.md",
+    "docs/deploy-migration.md",
     "package.json"
   ],
   "scripts": {
