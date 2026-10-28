@@ -44,6 +44,33 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 - `#Hira清理垃圾`、`#清理垃圾`
 - `#Hira帮助`
 
+## 安装
+
+推荐用 Git 克隆安装，并把 Karin 项目里的依赖声明为 `file:` 指向该克隆。这样 `#Hira更新` 才能通过 `git pull` 真正拉取更新，同时宿主不依赖 npm registry。
+
+```bash
+# 1. 在 Karin 项目同级目录克隆插件仓库
+git clone git@github.com:HiraHiraHiraHira/karin-plugin-hira.git ../karin-plugin-hira
+
+# 2. 在 Karin 项目里声明为本地依赖（相对路径按实际位置调整）
+pnpm add "karin-plugin-hira@file:../karin-plugin-hira"
+
+# 3. 安装运行时依赖
+cd ../karin-plugin-hira && pnpm install
+```
+
+`lib/` 和 `resources/web/` 随仓库提交，`git pull` 会一并更新，克隆安装无需本地构建。只在改动源码后需要 `pnpm build` 并提交产物。
+
+插件按以下顺序判定更新来源，只在确认是 npm registry 安装时才查询 npm：
+
+1. 宿主 `package.json` 以版本号/版本范围/dist-tag/`npm:` 别名声明该插件 → 走 npm 检查。
+2. 否则，插件目录（或 `file:` 指向的源码目录、同级同名目录）是 Git 仓库 → 走 `git fetch` + `git pull`。
+3. 两者都不满足 → 不发起任何网络请求。定时任务静默跳过，手动 `#Hira更新` 返回可操作错误。
+
+> 不要在服务器上手改 `lib/`。它是随仓库提交的构建产物，下次 `git pull` 会覆盖；要改就改 `src/`，执行 `pnpm build` 后提交。`file:` 部署更新成功后，插件会自动执行 `pnpm install --force` 刷新依赖并重启 Karin。
+
+Hermes 等第三方安装器如果用 pnpm tarball 直接塞进 `node_modules/`，属于第 3 种情况：插件不会报错，但也不会有更新提醒。需要自动更新就改成上面的克隆安装。
+
 ## 配置
 
 默认配置在 `config/default_config/`：

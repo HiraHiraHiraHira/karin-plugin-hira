@@ -19,6 +19,7 @@ import type { Message } from 'node-karin'
 
 import { Config } from '@/config'
 import { createConfiguredCommandRegExp, isHiraAppEnabled } from '@/apps/runtime'
+import { isNpmRegistrySpec, readPackageDependencySpec } from '@/apps/installSource'
 import { Root } from '@/root'
 import { isSemverGreater } from '@/runtime/semver'
 import {
@@ -60,32 +61,13 @@ type GitUpdateResult = {
 type HiraUpdateResult = NpmUpdateResult | GitUpdateResult
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
-const isNpmNotFoundError = (error: unknown) => {
-  const message = errorMessage(error)
-  return message.includes('E404') || message.includes('404 Not Found') || message.includes('is not in this registry')
-}
 
 const hasGitDir = (dir: string) => fs.existsSync(path.join(dir, '.git'))
-
-const readPackageDependencySpec = (cwd: string) => {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf-8')) as {
-      dependencies?: Record<string, string>
-      devDependencies?: Record<string, string>
-      optionalDependencies?: Record<string, string>
-    }
-    return pkg.dependencies?.[Root.pluginName] ||
-      pkg.devDependencies?.[Root.pluginName] ||
-      pkg.optionalDependencies?.[Root.pluginName]
-  } catch {
-    return undefined
-  }
-}
 
 export const resolveGitUpdateTarget = (pluginPath = Root.pluginPath, cwd = process.cwd()) => {
   if (hasGitDir(pluginPath)) return { path: pluginPath, refreshInstall: false }
 
-  const spec = readPackageDependencySpec(cwd)
+  const spec = readPackageDependencySpec(Root.pluginName, cwd)
   if (spec?.startsWith('file:')) {
     const sourcePath = path.resolve(cwd, spec.slice('file:'.length))
     if (hasGitDir(sourcePath)) return { path: sourcePath, refreshInstall: true }
@@ -182,7 +164,19 @@ const checkGitUpdate = async (): Promise<GitUpdateResult> => {
     }
   }
 
-  const update = await checkGitPluginUpdate(target.path)
+  const update = await checkGitPluginUpdate(target.path).catch((error: unknown) => ({
+    status: 'error' as const,
+    data: error instanceof Error ? error : new Error(String(error))
+  }))
+  // node-karin 的契约是必定返回对象，但它内部有分支只 clearTimeout 不返回，
+  // 这里兜住 undefined，避免退化成 "Cannot read properties of undefined"。
+  if (!update || typeof update !== 'object') {
+    return {
+      status: 'error',
+      error: new Error(`${Root.pluginName} 的 Git 更新检查没有返回结果，请手动在 ${target.path} 执行 git fetch 排查。`),
+      source: 'git'
+    }
+  }
   if (update.status === 'error') {
     return {
       status: 'error',
@@ -207,10 +201,23 @@ const checkGitUpdate = async (): Promise<GitUpdateResult> => {
   }
 }
 
+export const resolveUpdateCheckSource = (pluginPath = Root.pluginPath, cwd = process.cwd()) => {
+  if (isNpmRegistrySpec(readPackageDependencySpec(Root.pluginName, cwd))) return 'npm' as const
+  return hasGitDir(pluginPath) ? 'git' as const : 'none' as const
+}
+
 const checkAvailableUpdate = async (): Promise<HiraUpdateResult> => {
-  const update = await checkPkgUpdate(Root.pluginName, { compare: 'semver' })
-  if (update.status === 'error' && isNpmNotFoundError(update.error)) return checkGitUpdate()
-  return update
+  const source = resolveUpdateCheckSource()
+  if (source === 'npm') return checkPkgUpdate(Root.pluginName, { compare: 'semver' })
+  if (source === 'git') return checkGitUpdate()
+
+  // 既非 npm 声明安装、目录又不是 Git 仓库（例如宿主用 pnpm/tarball 安装）：
+  // 调 checkPkgUpdate 只会让 Karin 打一条 npm 404 日志，直接返回可读错误。
+  return {
+    status: 'error',
+    error: new Error(`${Root.pluginName} 未声明为 npm 依赖，安装目录也不是 Git 仓库，无法检查更新。请使用 Git 克隆安装，或在宿主项目 package.json 中使用 file: 指向源码仓库。`),
+    source: 'git'
+  }
 }
 
 const updateByGit = async (update: Extract<GitUpdateResult, { status: 'yes' }>, e: Message) => {
@@ -416,6 +423,9 @@ const updateReminderCardMessage = async (update: Extract<HiraUpdateResult, { sta
 }
 
 export const checkAndNotifyUpdate = async () => {
+  // 无法确定更新来源（非 npm 声明安装且非 Git 目录）时不轮询、不报错，避免每 3 分钟刷日志。
+  if (resolveUpdateCheckSource() === 'none') return true
+
   const update = await checkAvailableUpdate().catch(() => undefined)
   if (!update || update.status !== 'yes') return true
   if (!('source' in update) && !isSemverGreater(update.remote, update.local)) return true

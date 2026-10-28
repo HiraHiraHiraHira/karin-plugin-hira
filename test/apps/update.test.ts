@@ -5,6 +5,8 @@ import path from 'node:path'
 import type { Message } from 'node-karin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { Root } from '@/root'
+
 const karinMocks = vi.hoisted(() => {
   const command = vi.fn((_reg, handler, options) => ({ handler, options }))
   const task = vi.fn((_title, _cron, handler, options) => ({ handler, options }))
@@ -101,6 +103,20 @@ const readFirstRenderedHtml = () => {
   return fs.readFileSync(String(file), 'utf-8')
 }
 
+vi.mock('@/apps/installSource', async importOriginal => ({
+  ...await importOriginal<typeof import('@/apps/installSource')>(),
+  isNpmRegistrySpec: (spec: string | undefined) => spec === '^0.1.0'
+}))
+
+const npmSpec = { dependencies: { 'karin-plugin-hira': '^0.1.0' } }
+
+const useInstallSource = (pkg: object | undefined) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hira-update-cwd-'))
+  if (pkg) fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify(pkg))
+  vi.spyOn(process, 'cwd').mockReturnValue(tmp)
+  return tmp
+}
+
 describe('update command', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -112,6 +128,7 @@ describe('update command', () => {
     karinMocks.getLocalCommitHash.mockResolvedValue('local123')
     karinMocks.getRemoteCommitHash.mockResolvedValue('remote456')
     karinMocks.exec.mockResolvedValue({ status: true, error: null, stdout: '', stderr: '' })
+    useInstallSource(npmSpec)
   })
 
   it('accepts Hira update aliases', async () => {
@@ -160,10 +177,7 @@ describe('update command', () => {
   })
 
   it('falls back to git update when the package is not published to npm', async () => {
-    karinMocks.checkPkgUpdate.mockResolvedValue({
-      status: 'error',
-      error: new Error('npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/karin-plugin-hira - Not found')
-    })
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
     karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'yes', data: 'abc123 fix update', count: 1 })
     karinMocks.updateGitPlugin.mockResolvedValue({ status: 'ok', data: '更新成功', commit: 'abc123 fix update' })
     const e = createMessage()
@@ -194,10 +208,7 @@ describe('update command', () => {
   })
 
   it('renders the git no-update result as a Hira update card', async () => {
-    karinMocks.checkPkgUpdate.mockResolvedValue({
-      status: 'error',
-      error: new Error('npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/karin-plugin-hira - Not found')
-    })
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
     karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'no', data: '', count: 0 })
     karinMocks.getLocalCommitHash.mockResolvedValue('d90d2e8')
     const e = createMessage()
@@ -224,11 +235,8 @@ describe('update command', () => {
   })
 
   it('uses package version rather than commit hash in git no-update text fallback', async () => {
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
     karinMocks.render.mockRejectedValueOnce(new Error('render offline'))
-    karinMocks.checkPkgUpdate.mockResolvedValue({
-      status: 'error',
-      error: new Error('npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/karin-plugin-hira - Not found')
-    })
     karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'no', data: '', count: 0 })
     karinMocks.getLocalCommitHash.mockResolvedValue('d90d2e8')
     const e = createMessage()
@@ -281,12 +289,9 @@ describe('update command', () => {
   })
 
   it('keeps git update reminder text fallback semantically separate from commit hashes', async () => {
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
     karinMocks.render.mockRejectedValueOnce(new Error('render offline'))
     const getFriendList = vi.fn(async () => [{ userId: 'owner-1' }])
-    karinMocks.checkPkgUpdate.mockResolvedValue({
-      status: 'error',
-      error: new Error('npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/karin-plugin-hira - Not found')
-    })
     karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'yes', data: 'remote456 fix update', count: 2 })
     karinMocks.getLocalCommitHash.mockResolvedValue('local123')
     karinMocks.getRemoteCommitHash.mockResolvedValue('remote456')
@@ -325,5 +330,52 @@ describe('update command', () => {
 
     expect(karinMocks.updatePkg).toHaveBeenCalledWith('karin-plugin-hira')
     expect(next).toHaveBeenCalled()
+  })
+
+  it('never queries npm for a tarball install that is not declared in the host package.json', async () => {
+    useInstallSource({ dependencies: { 'node-karin': '^1.16.1' } })
+    karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'no', data: '', count: 0 })
+    const e = createMessage()
+    const { handleHiraUpdate } = await importUpdate()
+
+    await handleHiraUpdate(e)
+
+    expect(karinMocks.checkPkgUpdate).not.toHaveBeenCalled()
+    expect(karinMocks.updatePkg).not.toHaveBeenCalled()
+    expect(karinMocks.checkGitPluginUpdate).toHaveBeenCalledWith(Root.pluginPath)
+    expect(readFirstRenderedHtml()).toContain('当前已是最新版本')
+  })
+
+  it('reports an actionable error when the git check returns no result', async () => {
+    karinMocks.checkPkgUpdate.mockResolvedValue({ status: 'no', local: '0.1.0' })
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
+    karinMocks.checkGitPluginUpdate.mockResolvedValue(undefined)
+    const e = createMessage()
+    const { handleHiraUpdate } = await importUpdate()
+
+    await handleHiraUpdate(e)
+
+    expect(e.reply).toHaveBeenCalledWith(expect.stringContaining('没有返回结果'))
+  })
+
+  it('resolves the update check source from the host manifest and plugin directory', async () => {
+    const cwd = useInstallSource({ dependencies: { 'node-karin': '^1.16.1' } })
+    const { resolveUpdateCheckSource } = await importUpdate()
+    const noGit = path.join(cwd, 'plugin')
+
+    expect(resolveUpdateCheckSource(noGit, cwd)).toBe('none')
+    expect(resolveUpdateCheckSource(Root.pluginPath, cwd)).toBe('git')
+    fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify(npmSpec))
+    expect(resolveUpdateCheckSource(noGit, cwd)).toBe('npm')
+  })
+
+  it('silences the periodic check when the install source cannot be resolved', async () => {
+    useInstallSource({ dependencies: { 'node-karin': '^1.16.1' } })
+    const { checkAndNotifyUpdate } = await importUpdate()
+
+    await expect(checkAndNotifyUpdate()).resolves.toBe(true)
+
+    expect(karinMocks.checkPkgUpdate).not.toHaveBeenCalled()
+    expect(karinMocks.sendMaster).not.toHaveBeenCalled()
   })
 })
