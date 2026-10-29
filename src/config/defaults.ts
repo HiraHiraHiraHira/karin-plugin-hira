@@ -12,7 +12,7 @@ export const defaultConfig: HiraConfig = {
     enabled: true,
     defaultSource: 'qq',
     listModeDefault: false,
-    pageSize: 10,
+    pageSize: 20,
     sessionTtlSeconds: 180,
     voiceEnabled: true,
     highQuality: false,
@@ -130,7 +130,6 @@ export const defaultConfig: HiraConfig = {
     cleanupEnabled: true,
     cleanupMaxAgeMinutes: 120,
     ffmpegPath: 'ffmpeg',
-    ffprobePath: 'ffprobe',
     downloadTimeoutSeconds: 60,
     maxVideoFileSizeBytes: 200 * 1024 * 1024,
     maxAudioFileSizeBytes: 100 * 1024 * 1024,
@@ -149,8 +148,8 @@ export const defaultConfig: HiraConfig = {
     tiredApis: [
       'https://api.vvhan.com/api/wallpaper/views'
     ],
-    medicineApi: 'https://api.oioweb.cn/api/common/DrugSearch?keyword={keyword}',
-    softwareApi: 'https://api.oioweb.cn/api/common/SoftwareSearch?keyword={keyword}'
+    medicineApi: 'https://server.dayi.org.cn/api/search?keyword={keyword}&pageNo=1&pageSize=10',
+    softwareApi: ''
   },
   translate: {
     enabled: true,

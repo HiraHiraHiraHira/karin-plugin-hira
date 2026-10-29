@@ -62,7 +62,6 @@ export const webFieldPathMap: Record<string, string> = {
   runtimeMaxPreviewCoverBytes: 'runtime.maxPreviewCoverBytes',
   runtimeMaxTempBytes: 'runtime.maxTempBytes',
   runtimeFfmpegPath: 'runtime.ffmpegPath',
-  runtimeFfprobePath: 'runtime.ffprobePath',
   lightEnabled: 'light.enabled',
   translateEnabled: 'translate.enabled',
   translateDeeplxApi: 'translate.deeplxApi',
@@ -212,7 +211,7 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
         }),
         accordionItem.create('hiraRuntime', {
           title: '运行时工具',
-          subtitle: '管理临时目录、缓存清理、下载上限和 ffmpeg/ffprobe 路径。',
+          subtitle: '管理临时目录、缓存清理、下载上限和 ffmpeg 路径。',
           children: [
             createOptionalStringInput('runtimeTempRoot', '临时目录', config.runtime.tempRoot, '可选，留空时使用 Karin 共享 temp 目录下的插件子目录（协议端能读到，视频/语音才发得出去）。'),
             createSwitch('runtimeCleanupEnabled', '自动清理临时文件', config.runtime.cleanupEnabled, '开启后由每小时一次的定时任务清理过期下载缓存。'),
@@ -222,8 +221,7 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
             input.number('runtimeMaxAudioFileSizeBytes', { label: '单个音频上限（字节）', description: '语音点歌等音频下载的最大体积；默认 104857600 字节（100 MiB）。', defaultValue: String(config.runtime.maxAudioFileSizeBytes), rules: [{ min: 1048576, max: 1073741824 }] }),
             input.number('runtimeMaxPreviewCoverBytes', { label: '预览封面上限（字节）', description: '内联预览封面允许下载的最大体积；默认 10485760 字节（10 MiB）。', defaultValue: String(config.runtime.maxPreviewCoverBytes), rules: [{ min: 65536, max: 52428800 }] }),
             input.number('runtimeMaxTempBytes', { label: '临时目录上限（字节）', description: '超过上限后按最旧文件优先清理；默认 2147483648 字节（2 GiB）。', defaultValue: String(config.runtime.maxTempBytes), rules: [{ min: 104857600, max: 21474836480 }] }),
-            input.string('runtimeFfmpegPath', { label: 'ffmpeg 路径', description: '用于合并 B站 DASH 视频和音频。', defaultValue: config.runtime.ffmpegPath }),
-            input.string('runtimeFfprobePath', { label: 'ffprobe 路径', description: '预留给后续媒体信息检测。', defaultValue: config.runtime.ffprobePath })
+            input.string('runtimeFfmpegPath', { label: 'ffmpeg 路径', description: '用于合并 B站 DASH 视频和音频。', defaultValue: config.runtime.ffmpegPath })
           ]
         }),
         accordionItem.create('hiraExtra', {

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createBilibiliPlayUrl,
+  extractBilibiliPage,
   extractBvid,
+  isBilibiliShortUrl,
   normalizeBilibiliVideoInfo,
   resolveBilibili,
   selectBestBilibiliStream
@@ -41,6 +43,15 @@ describe('bilibili resolver helpers', () => {
   it('extracts bvid from ordinary video links', () => {
     expect(extractBvid('https://www.bilibili.com/video/BV14A31eZEH8?p=2')).toBe('BV14A31eZEH8')
     expect(extractBvid('https://m.bilibili.com/video/BV1xx411c7mD')).toBe('BV1xx411c7mD')
+  })
+
+  it('parses multi-P page numbers and short-link hosts', () => {
+    expect(extractBilibiliPage('https://www.bilibili.com/video/BV14A31eZEH8?p=2')).toBe(2)
+    expect(extractBilibiliPage('https://www.bilibili.com/video/BV14A31eZEH8')).toBe(1)
+    expect(extractBilibiliPage('https://www.bilibili.com/video/BV14A31eZEH8?p=abc')).toBe(1)
+    expect(isBilibiliShortUrl('https://b23.tv/abc123')).toBe(true)
+    expect(isBilibiliShortUrl('https://bili2233.cn/abc123')).toBe(true)
+    expect(isBilibiliShortUrl('https://www.bilibili.com/video/BV14A31eZEH8')).toBe(false)
   })
 
   it('normalizes video info payloads', () => {
@@ -415,5 +426,47 @@ describe('bilibili resolver helpers', () => {
       url: 'https://video.example.test/compact-720p.m4s'
     }))
     expect(runFfmpeg).toHaveBeenCalled()
+  })
+
+  it('resolves multi-P videos with the cid of the requested page', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/x/web-interface/view')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            aid: 123,
+            bvid: 'BV14A31eZEH8',
+            cid: 111,
+            title: '视频标题',
+            pic: 'https://i0.hdslb.com/cover.jpg',
+            owner: { name: 'UP主' },
+            duration: 120,
+            pages: [
+              { cid: 111, page: 1, part: 'P1', duration: 60 },
+              { cid: 222, page: 2, part: 'P2', duration: 90 }
+            ]
+          }
+        }), { status: 200 })
+      }
+
+      if (url.includes('/x/player/playurl')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: {
+            durl: [{ url: 'https://video.example.test/p2.mp4' }]
+          }
+        }), { status: 200 })
+      }
+
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await resolveBilibili('https://www.bilibili.com/video/BV14A31eZEH8?p=2')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('cid=222'),
+      expect.anything()
+    )
   })
 })

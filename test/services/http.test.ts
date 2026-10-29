@@ -1,11 +1,17 @@
+import { createRequire } from 'node:module'
+
 import axios from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchJson, fetchResponse, readResponseBytes, toAxiosProxy } from '@/services/http'
 
-vi.mock('axios', () => ({
-  default: { request: vi.fn() }
-}))
+// insecure 分支走 axios 的独立通道，用 mock 拦截即可保证测试不触网。
+const { axiosRequest } = vi.hoisted(() => ({ axiosRequest: vi.fn() }))
+
+vi.mock('axios', () => ({ default: { request: axiosRequest } }))
+
+// http.ts 的 insecure 分支用裸 require 取 node:https；ESM 测试环境默认没有这个全局函数。
+const nodeRequire = createRequire(import.meta.url)
 
 // 模拟一个会响应 abort 的 fetch：收到中止信号时抛出 AbortError
 const abortableFetch = () => vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
@@ -121,5 +127,63 @@ describe('fetchResponse', () => {
     await expect(
       fetchResponse('https://example.test/api', { proxy: 'http://127.0.0.1:7890' })
     ).rejects.toBe(canceled)
+  })
+})
+
+describe('fetchResponse insecure branch', () => {
+  beforeEach(() => {
+    axiosRequest.mockReset()
+    vi.stubGlobal('require', nodeRequire)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('rejects insecure requests that also pass a proxy without touching the network', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    // 两条通道互斥：静默择一会让调用方误以为 TLS 校验已放宽，必须在发请求前就报错。
+    await expect(fetchResponse('https://example.test/x', { insecure: true, proxy: 'http://127.0.0.1:9' }))
+      .rejects.toThrow('insecure 请求不支持代理')
+
+    expect(axiosRequest).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('enforces maxBytes on the insecure branch and forwards the limit to axios', async () => {
+    axiosRequest.mockResolvedValue({
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      data: Buffer.alloc(2048)
+    })
+
+    await expect(fetchResponse('https://example.test/x', { insecure: true, maxBytes: 1024 }))
+      .rejects.toThrow('响应超过 1024 字节限制')
+
+    expect(axiosRequest).toHaveBeenCalledWith(expect.objectContaining({ maxContentLength: 1024 }))
+  })
+
+  it('disables TLS verification only for the insecure request and returns fitting bodies', async () => {
+    axiosRequest.mockResolvedValue({
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      data: Buffer.alloc(2048)
+    })
+
+    const response = await fetchResponse('https://example.test/x', { insecure: true, maxBytes: 4096 })
+
+    expect(response.status).toBe(200)
+    expect((await response.arrayBuffer()).byteLength).toBe(2048)
+    // 放宽校验必须钉在这一条 axios 请求上（httpsAgent 由 node:https 真实构造）。
+    expect(axiosRequest).toHaveBeenCalledWith(expect.objectContaining({
+      maxContentLength: 4096,
+      httpsAgent: expect.objectContaining({
+        options: expect.objectContaining({ rejectUnauthorized: false })
+      })
+    }))
   })
 })

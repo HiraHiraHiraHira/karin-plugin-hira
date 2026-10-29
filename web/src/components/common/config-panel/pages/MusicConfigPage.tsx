@@ -12,9 +12,9 @@ const MusicConfigPage = ({ renderers }: ConfigPageProps) => {
           {renderSwitch(['music', 'enabled'], '启用点歌', '开启后响应点歌、歌词、语音和 B站音乐链接命令。')}
           {renderSelectField(['music', 'defaultSource'], '默认音乐源', '未指定平台时优先使用的搜索来源。', musicSourceOptions)}
           {renderSwitch(['music', 'listModeDefault'], '默认列表模式', '开启后普通点歌也先返回多选列表。')}
-          {renderSwitch(['music', 'highQuality'], '高品质语音', '开启后语音点歌用 128kbps 双声道转码，关闭时为 32kbps 单声道。')}
+          {renderSwitch(['music', 'highQuality'], '高品质点歌', '语音点歌用 128kbps 双声道转码（关闭为 32kbps 单声道）；网易云音源请求 lossless（关闭为 exhigh）。')}
           {renderSwitch(['music', 'voiceEnabled'], '启用语音点歌', '开启后可使用语音点歌相关命令。')}
-          {renderTextField(['music', 'pageSize'], '每页数量', '多选点歌列表每页展示的歌曲数量。', { type: 'number', fallback: 10, min: 1, max: 20 })}
+          {renderTextField(['music', 'pageSize'], '每页数量', '多选点歌列表每页展示的歌曲数量。', { type: 'number', fallback: 20, min: 1, max: 20 })}
           {renderTextField(['music', 'sessionTtlSeconds'], '会话有效期（秒）', '多选列表保留多久可继续用序号选择。', { type: 'number', fallback: 180, min: 30, max: 3600 })}
         </>
       ))}

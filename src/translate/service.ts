@@ -18,7 +18,9 @@ type TencentLikeResponse = {
 export const translateText = async (text: string, target: TranslateTarget) => {
   const timeoutMs = Config.translate.timeoutSeconds * 1000
 
-  if (Config.translate.deeplxApi.trim()) {
+  // DeepL 语言表没有 `WYW`（文言文），带配置请求只会白白失败一次再走兜底；
+  // 文言文直接交给 tencent 兼容接口（其 `target` 原样透传，由后端解析 wyw）。
+  if (target !== 'wyw' && Config.translate.deeplxApi.trim()) {
     try {
       const payload = await fetchJson<DeepLXResponse>(Config.translate.deeplxApi, {
         timeoutMs,

@@ -57,7 +57,14 @@ type BilibiliPlayUrl = {
   }
 }
 
-const bvPattern = /\bBV[1-9A-HJ-NP-Za-km-z]{10}\b/
+export const bvPattern = /\bBV[1-9A-HJ-NP-Za-km-z]{10}\b/
+
+/** 搜索结果里的 param/uri 字段常带额外前缀，视频链接里的 BV 号偶尔使用旧字符集，这里做宽松提取。 */
+export const extractBvFromText = (value: string | undefined) => {
+  if (!value) return undefined
+  return value.match(bvPattern)?.[0] || value.match(/BV[0-9A-Za-z]{10}/)?.[0]
+}
+
 const bilibiliAppHeaders = {
   'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 12; MI 9 Build/SKQ1.211230.001)'
 }
@@ -129,7 +136,7 @@ const bilibiliAppParams = (appKey: string, extra: Record<string, string | number
 })
 
 const getItemBvid = (item: BilibiliAppSearchItem) => {
-  return item.share?.video?.bvid || item.param?.match(bvPattern)?.[0] || item.uri?.match(bvPattern)?.[0]
+  return item.share?.video?.bvid || extractBvFromText(item.param) || extractBvFromText(item.uri)
 }
 
 export const selectBilibiliAudio = (payload: BilibiliPlayUrl) => {
@@ -247,21 +254,18 @@ export class BilibiliMusicProvider implements MusicProvider {
   }
 
   async fromLink(url: string): Promise<MusicItem> {
-    const bvid = url.match(bvPattern)?.[0]
+    const bvid = extractBvFromText(url)
     if (!bvid) {
-      return {
-        id: url,
-        source: 'bilibili',
-        title: 'B站视频音频',
-        artists: ['哔哩哔哩'],
-        pageUrl: url
-      }
+      throw new Error('未在链接中识别到 B站 BV 号，请使用 BV 号链接或可在浏览器打开的 b23.tv 短链')
     }
 
     const data = await this.requestJson<BilibiliVideoInfo>(
       `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
       this.requestOptions(`https://www.bilibili.com/video/${bvid}`)
     )
+    if (!data.data?.aid || !data.data?.cid) {
+      throw new Error('B站视频信息不完整（缺少 aid/cid），可能已失效或需要配置 music.cookies.bilibili')
+    }
 
     return {
       id: bvid,

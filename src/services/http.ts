@@ -11,6 +11,8 @@ export type FetchJsonOptions = {
   redirect?: RequestRedirect
   maxRedirects?: number
   signal?: AbortSignal
+  /** 跳过 TLS 证书校验（仅用于证书损坏的历史接口，如 dayi 医药源） */
+  insecure?: boolean
 }
 
 const defaultRequestHeaders = {
@@ -120,7 +122,38 @@ const createAbortSignal = (timeoutMs: number, external?: AbortSignal) => {
 }
 
 export const fetchResponse = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
+  // insecure 只能走 axios（fetch 无法按请求关证书校验），而代理同样只能走 axios 的独立通道；
+  // 两条分支互斥，静默择一会让调用方以为同时生效，所以显式报错。
+  if (options.insecure && options.proxy?.trim()) {
+    throw new Error('insecure 请求不支持代理，请二选一')
+  }
   if (options.proxy?.trim()) return requestViaProxy(url, options)
+  if (options.insecure) {
+    const response = await axios.request({
+      url,
+      method: options.method || 'GET',
+      data: options.body,
+      headers: buildHeaders(options),
+      timeout: options.timeoutMs ?? 15_000,
+      responseType: 'arraybuffer',
+      maxContentLength: options.maxBytes ?? -1,
+      maxRedirects: options.maxRedirects ?? (options.redirect === 'manual' ? 0 : 5),
+      signal: options.signal,
+      validateStatus: () => true,
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- Node 内置 https，仅 insecure 路径使用
+      httpsAgent: new (require('node:https').Agent)({ rejectUnauthorized: false })
+    })
+    const data = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data || '')
+    // axios 的 maxContentLength 对 chunked 响应无效，这里按实际字节再兜一次。
+    if (options.maxBytes !== undefined && data.byteLength > options.maxBytes) {
+      throw new Error(`响应超过 ${options.maxBytes} 字节限制`)
+    }
+    return new Response(data, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: headersFromAxios(response.headers as Record<string, unknown>)
+    })
+  }
 
   const timeoutMs = options.timeoutMs ?? 15_000
   const { signal, didTimeout, cleanup } = createAbortSignal(timeoutMs, options.signal)

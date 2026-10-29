@@ -8,7 +8,7 @@ defaultSource: qq
 listModeDefault: false
 
 # 搜索列表每页数量
-pageSize: 10
+pageSize: 20
 
 # 搜索会话有效期，单位秒
 sessionTtlSeconds: 180
@@ -16,11 +16,8 @@ sessionTtlSeconds: 180
 # 是否尝试发送语音
 voiceEnabled: true
 
-# 是否优先请求高品质音源
+# 是否优先请求高品质音源（目前作用于网易云：开启后请求 lossless，否则 exhigh）
 highQuality: false
-
-# 发送音频失败时是否回退到文本链接
-textFallback: true
 
 # 点歌卡片发送：按通道优先级依次尝试，前面的失败自动降级到后面
 # platform = 平台 ID 卡（{type:'163', id}），卡片身份原生正确（网易云就是网易云），签名由协议端完成

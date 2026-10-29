@@ -121,7 +121,6 @@ describe('Hira custom config page', () => {
       'runtime.cleanupEnabled',
       'runtime.cleanupMaxAgeMinutes',
       'runtime.ffmpegPath',
-      'runtime.ffprobePath',
       'runtime.downloadTimeoutSeconds',
       'runtime.maxVideoFileSizeBytes',
       'runtime.maxAudioFileSizeBytes',

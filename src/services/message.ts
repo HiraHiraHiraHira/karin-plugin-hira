@@ -1,7 +1,7 @@
 import * as fs from 'node:fs'
 import path from 'node:path'
 
-import type { Message } from 'node-karin'
+import type { CustomNodeElement, Message } from 'node-karin'
 import { common, segment } from 'node-karin'
 
 import { Config } from '@/config'
@@ -144,33 +144,65 @@ export const replyImage = async (e: Message, url: string, title?: string) => {
   }
 }
 
-export const replyMusicList = async (e: Message, items: MusicItem[], page: number) => {
+export const replyMusicList = async (e: Message, items: MusicItem[], page: number, options?: { startIndex?: number }) => {
   if (items.length === 0) {
     await replyText(e, '没有搜到相关歌曲')
-    return
+    return undefined
   }
 
-  const rows = items.map(item => {
+  const startIndex = Math.max(1, Math.floor(options?.startIndex ?? 1))
+  const rows = items.map((item, offset) => {
     const duration = item.durationSeconds ? `${Math.floor(item.durationSeconds / 60)}:${String(item.durationSeconds % 60).padStart(2, '0')}` : ''
     return {
+      index: startIndex + offset,
       title: item.title,
       artists: formatArtists(item.artists),
       duration
     }
   })
 
+  const extractMessageId = (result: unknown) => {
+    if (typeof result !== 'object' || result === null || !('messageId' in result)) return undefined
+    const messageId: unknown = result.messageId
+    return typeof messageId === 'string' && messageId ? messageId : undefined
+  }
+
   try {
     const images = await renderCardImage({
       name: 'music-list',
-      html: buildMusicListCardHtml(rows, page),
+      html: buildMusicListCardHtml(rows, page, startIndex),
       width: 920
     })
-    await e.reply(images as ReplyPayload)
-    return
+    const result = await e.reply(images as ReplyPayload)
+    return extractMessageId(result)
   } catch (error) {
     logCardRenderFailure('music-list', error)
-    const lines = rows.map((item, index) => `${index + 1}. ${item.title} - ${item.artists}${item.duration ? ` ${item.duration}` : ''}`)
-    await replyPlainText(e, [`---点歌列表[第${page}页]---`, ...lines, '----------------', '发送序号点歌，发送 #下一页 查看更多。'].join('\n'))
+    const lines = rows.map(row => `${row.index}. ${row.title} - ${row.artists}${row.duration ? ` ${row.duration}` : ''}`)
+    const result = await e.reply([`---点歌列表[第${page}页]---`, ...lines, '----------------', '发送序号点歌，发送 #下一页 查看更多。'].join('\n') as ReplyPayload)
+    return extractMessageId(result)
+  }
+}
+
+/**
+ * 原生音乐卡平台映射.
+ * 各平台适配器对不支持的 id 不抛错, 只渲染空卡, 所以必须在此按平台 id 形状过滤;
+ * 无原生渠道（B站）或 id 形状不合法时返回 undefined, 调用方降级到自定义卡.
+ */
+export const nativeMusicCard = (source: MusicItem['source'], id: string) => {
+  const cleanId = id?.trim()
+  if (!cleanId) return undefined
+  switch (source) {
+    case 'netease':
+      return /^\d+$/.test(cleanId) ? { platform: '163' as const, id: cleanId } : undefined
+    case 'qq':
+      return /^[0-9A-Za-z]{14}$/.test(cleanId) ? { platform: 'qq' as const, id: cleanId } : undefined
+    case 'kuwo':
+      return /^\d+$/.test(cleanId) ? { platform: 'kuwo' as const, id: cleanId } : undefined
+    case 'kugou':
+      // kugou 的 id 是 32 位音频 hash, 不是数字 id.
+      return /^[0-9a-fA-F]{32}$/.test(cleanId) ? { platform: 'kugou' as const, id: cleanId } : undefined
+    default:
+      return undefined
   }
 }
 
@@ -178,19 +210,21 @@ export const replyMusicPlayable = async (e: Message, playable: MusicPlayable) =>
   await sendMusicCard(e, playable)
 }
 
-export const replyVoiceOrAudio = async (e: Message, playable: MusicPlayable) => {
-  try {
-    await e.reply(segment.record(playable.audioUrl) as ReplyPayload)
-  } catch {
-    await replyMusicPlayable(e, playable)
-  }
-}
-
 export const replyVoiceFileOrAudio = async (e: Message, playable: MusicPlayable, voiceFile?: string) => {
   try {
-    await e.reply(segment.record(voiceFile || playable.audioUrl) as ReplyPayload)
+    const result = await e.reply(segment.record(voiceFile || playable.audioUrl) as ReplyPayload)
+    return result?.messageId
   } catch {
+    if (voiceFile && voiceFile !== playable.audioUrl) {
+      try {
+        const result = await e.reply(segment.record(playable.audioUrl) as ReplyPayload)
+        return result?.messageId
+      } catch {
+        // 直链也失败, 继续降级到音乐卡 + 文本链接, 保证不空回.
+      }
+    }
     await replyMusicPlayable(e, playable)
+    return undefined
   }
 }
 
@@ -232,13 +266,84 @@ const resolverImageDedupeOptions = () => ({
   dedupe: Config.resolver.media.dedupeImages !== false,
   filterLowQuality: Config.resolver.media.filterLowQualityImages !== false
 })
+/**
+ * 带签名的查询参数名(大小写不敏感, 覆盖 cos/oss/aws 的 `x-expires` / `X-Amz-Signature` 前缀写法).
+ * 这类 URL 追加任意参数都会让签名失效, 因此必须原样返回.
+ */
+const signedQueryKeyPattern = /(?:^|[-_])(?:sign|signature|sig|expires|auth_key|token)$/i
+
+const hasSignedQuery = (url: string) => {
+  const queryIndex = url.indexOf('?')
+  if (queryIndex < 0) return false
+  const query = url.slice(queryIndex + 1).split('#')[0]
+  return query.split('&').some(pair => signedQueryKeyPattern.test(pair.split('=')[0]))
+}
+
+/**
+ * 风控重发:首次发送失败(常见图床风控)时,给图片 URL 追加随机查询字节改 hash 后重试一次.
+ * 参考 R `utils/retry.js` replyWithRetry.仅改 URL,不动本地文件.
+ * 签名 URL 追加参数只会破坏签名, 故原样返回.
+ */
+export const withCacheBuster = (url: string) => (
+  hasSignedQuery(url)
+    ? url
+    : `${url}${url.includes('?') ? '&' : '?'}hira-retry=${Math.random().toString(36).slice(2, 8)}${Date.now() % 1000}`
+)
+
+export const bustImageUrls = (elements: ReplyPayload) => {
+  const list = Array.isArray(elements) ? elements : [elements]
+  return list.map(el => {
+    if (typeof el !== 'object' || el === null || !('type' in el)) return el
+    const seg = el as { type?: string, file?: unknown, url?: unknown }
+    if (seg.type !== 'image') return el
+    const raw = typeof seg.file === 'string' ? seg.file : typeof seg.url === 'string' ? seg.url : undefined
+    if (!raw || !/^https?:/i.test(raw)) return el
+    const busted = withCacheBuster(raw)
+    return { ...seg, ...(typeof seg.file === 'string' ? { file: busted } : { url: busted }) }
+  })
+}
+
+/**
+ * 先正常发,失败则改 hash 重试一次;两次都失败抛给调用方降级.
+ * 重试只缓解 URL 侧缓存负命中(同一 URL 首次失败后被 CDN/客户端缓存), 对上传失败/风控
+ * 类失败无效; 签名 URL 不会被追加参数(见 `withCacheBuster`).
+ * 目前仅 `directResolvedPost` 使用, 其余发送路径失败直接降级.
+ */
+const replyWithRetry = async (e: Message, elements: ReplyPayload) => {
+  try {
+    await e.reply(elements)
+    return
+  } catch (first) {
+    try {
+      await e.reply(bustImageUrls(elements) as ReplyPayload)
+      return
+    } catch {
+      throw first
+    }
+  }
+}
+
+/** 转发按 50 条分批,超限分多条发出(参考 R sendImagesInBatches). */
+const FORWARD_BATCH_SIZE = 50
+
+const sendForwardBatched = async (e: Message, post: ResolvedPost, nodes: CustomNodeElement[], prompt: string, summary: string) => {
+  for (let i = 0; i < nodes.length; i += FORWARD_BATCH_SIZE) {
+    const chunk = nodes.slice(i, i + FORWARD_BATCH_SIZE)
+    const suffix = nodes.length > FORWARD_BATCH_SIZE ? `(${Math.floor(i / FORWARD_BATCH_SIZE) + 1}/${Math.ceil(nodes.length / FORWARD_BATCH_SIZE)})` : ''
+    await sendResolverForward(e, post, chunk, prompt, `${summary}${suffix}`)
+  }
+}
 
 const directResolvedPost = async (e: Message, post: ResolvedPost, text: string) => {
   const elements = [
     segment.text(text),
     ...resolverImageUrls(post.images).slice(0, 9).map(url => segment.image(url))
   ]
-  await e.reply(elements as ReplyPayload)
+  try {
+    await replyWithRetry(e, elements as ReplyPayload)
+  } catch {
+    await replyPlainText(e, [text, ...resolverImageUrls(post.images).slice(0, 9)].join('\n'))
+  }
 }
 
 const cardResolvedPost = async (e: Message, post: ResolvedPost, text: string) => {
@@ -300,12 +405,7 @@ const replyResolvedPostForward = async (e: Message, post: ResolvedPost, text: st
       ? '查看完整解析内容'
       : '查看解析内容'
 
-  await e.bot.sendForwardMsg(e.contact, nodes, {
-    source: '解析结果',
-    summary,
-    prompt: `${post.displayName}解析结果`,
-    news: [{ text: '点击查看解析结果' }]
-  })
+  await sendForwardBatched(e, post, nodes, `${post.displayName}解析结果`, summary)
 }
 
 const richResolverPlatforms = new Set<ResolvedPost['platform']>([
@@ -334,12 +434,12 @@ const replyRichResolverPost = async (e: Message, post: ResolvedPost, text: strin
     const copy = resolverForwardCopy(post)
     const contentBlocks = post.extras?.contentBlocks || []
     if (Config.resolver.sending.contentForwardEnabled !== false && contentBlocks.length > 0) {
-      await sendResolverForward(e, post, buildResolverContentNodes(e, post, contentBlocks, resolverImageDedupeOptions()), copy.contentPrompt, '查看完整图文')
+      await sendForwardBatched(e, post, buildResolverContentNodes(e, post, contentBlocks, resolverImageDedupeOptions()), copy.contentPrompt, '查看完整图文')
     }
 
     const commentBlocks = resolverCommentsEnabled() ? post.extras?.commentBlocks || [] : []
     if (commentBlocks.length > 0) {
-      await sendResolverForward(e, post, buildResolverCommentNodes(commentBlocks), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
+      await sendForwardBatched(e, post, buildResolverCommentNodes(commentBlocks), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
     }
   } catch {
     await directResolvedPost(e, post, text)

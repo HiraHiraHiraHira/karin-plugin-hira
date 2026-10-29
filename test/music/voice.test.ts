@@ -4,11 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { Config } from '@/config'
 import type { MusicPlayable } from '@/music/types'
-import { buildVoiceTempPaths, transcodePlayableToVoice } from '@/music/voice'
+import { buildVoiceTempPaths, isAmrAudioUrl, pcqqVoiceWarning, resolveVoiceFile, transcodePlayableToVoice, voiceUploadPlaceholder } from '@/music/voice'
 
 const runtimeMocks = vi.hoisted(() => ({
-  downloadFile: vi.fn(),
-  runFfmpeg: vi.fn()
+  downloadFile: vi.fn(async (options: { output: string }) => options.output),
+  runFfmpeg: vi.fn(async (options: { input: string, output: string, format: string }) => options.output)
 }))
 
 vi.mock('@/runtime/downloader', () => ({ downloadFile: runtimeMocks.downloadFile }))
@@ -99,5 +99,64 @@ describe('transcodePlayableToVoice', () => {
 
     expect((runtimeMocks.runFfmpeg.mock.calls[0]![0] as { highQuality?: boolean }).highQuality).toBe(true)
     fs.rmSync(result, { force: true })
+  })
+})
+
+const playableOf = (audioUrl: string): MusicPlayable => ({
+  item: { id: '1', source: 'qq', title: '晴天', artists: ['周杰伦'], pageUrl: 'https://example.test/song/1' },
+  audioUrl
+})
+
+describe('voiceUploadPlaceholder', () => {
+  it('builds the upload placeholder copy', () => {
+    expect(voiceUploadPlaceholder(playableOf('https://example.test/a.mp3'))).toBe('开始上传[晴天-周杰伦]…')
+  })
+})
+
+describe('isAmrAudioUrl', () => {
+  it('detects amr audio urls', () => {
+    expect(isAmrAudioUrl('https://example.test/a.amr')).toBe(true)
+    expect(isAmrAudioUrl('https://example.test/a.amr?x=1')).toBe(true)
+    expect(isAmrAudioUrl('https://example.test/a.mp3')).toBe(false)
+  })
+})
+
+describe('pcqqVoiceWarning', () => {
+  it('mentions PCQQ compatibility', () => {
+    expect(pcqqVoiceWarning(playableOf('https://example.test/a.amr'))).toContain('PCQQ')
+  })
+})
+
+describe('resolveVoiceFile', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns undefined only for high-quality amr sources that need no transcoding', async () => {
+    await expect(resolveVoiceFile(playableOf('https://example.test/a.amr'), { highQuality: true })).resolves.toBeUndefined()
+    expect(runtimeMocks.downloadFile).not.toHaveBeenCalled()
+    expect(runtimeMocks.runFfmpeg).not.toHaveBeenCalled()
+  })
+
+  it('transcodes high-quality mp3 sources instead of direct-uploading them', async () => {
+    const result = await resolveVoiceFile(playableOf('https://example.test/a.mp3'), { highQuality: true })
+
+    expect(result).toMatch(/\.ogg$/)
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://example.test/a.mp3',
+      output: expect.stringMatching(/\.audio$/)
+    }))
+    const ffmpegOptions = runtimeMocks.runFfmpeg.mock.calls[0]?.[0]
+    expect(ffmpegOptions).toMatchObject({
+      input: expect.stringMatching(/\.audio$/),
+      output: expect.stringMatching(/\.ogg$/),
+      format: 'voice'
+    })
+    expect(result).toBe(ffmpegOptions?.output)
+  })
+
+  it('transcodes non high-quality amr sources as well', async () => {
+    await expect(resolveVoiceFile(playableOf('https://example.test/a.amr'))).resolves.toMatch(/\.ogg$/)
+    expect(runtimeMocks.runFfmpeg).toHaveBeenCalledWith(expect.objectContaining({ format: 'voice' }))
   })
 })

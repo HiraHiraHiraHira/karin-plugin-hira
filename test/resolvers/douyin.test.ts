@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { extractDouyinAwemeId, normalizeDouyinDetail, resolveDouyin } from '@/resolvers/douyin'
+import { extractDouyinAwemeId, normalizeDouyinDetail, normalizeDouyinSsrHtml, resolveDouyin } from '@/resolvers/douyin'
 import { downloadFile } from '@/runtime/downloader'
 import { runFfmpeg } from '@/runtime/ffmpeg'
 
@@ -326,5 +326,232 @@ describe('douyin resolver helpers', () => {
       platform: 'douyin',
       ok: false
     })
+  })
+  it('parses inline SSR snapshots without cookies', () => {
+    const html = `<html>${'<a>'.repeat(120)}<body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      aweme_detail: {
+        desc: 'SSR 作品',
+        author: { nickname: '作者' },
+        video: {
+          cover: { url_list: ['https://cover.test/1.jpg'] },
+          bit_rate: [{ format: 'mp4', gear_name: 'normal', play_addr: { url_list: ['https://video.test/1.mp4'] } }]
+        }
+      }
+    })}</script></body></html>`
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html)
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) {
+      expect(result.videos[0]).toContain('video.test')
+    }
+  })
+
+  it('rejects empty SSR snapshots', () => {
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', '<html></html>')
+    expect('ok' in result).toBe(true)
+  })
+
+  it('parses NEXT_DATA snapshots when more scripts follow', () => {
+    const snapshot = JSON.stringify({
+      aweme_detail: {
+        desc: '多脚本页面',
+        video: {
+          duration: 12000,
+          cover: { url_list: ['https://cover.test/multi.jpg'] },
+          bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/multi.mp4'] } }]
+        }
+      }
+    })
+    const html = `<html>${'<a>'.repeat(120)}<body>`
+      + `<script id="__NEXT_DATA__" type="application/json">${snapshot}</script>`
+      + '<script>var x=1</script><script>var y=2</script>'
+      + '</body></html>'
+
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html)
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) expect(result.videos[0]).toContain('multi.mp4')
+  })
+
+  it('parses universal rehydration snapshots when more scripts follow', () => {
+    const snapshot = JSON.stringify({
+      aweme_detail: {
+        desc: '全局快照',
+        video: {
+          duration: 12000,
+          cover: { url_list: ['https://cover.test/universal.jpg'] },
+          bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/universal.mp4'] } }]
+        }
+      },
+      // 真实 SSR 快照远大于 {500,} 的下界,这里补足长度以覆盖该规则本身
+      seo_abnormal: 'x'.repeat(400)
+    })
+    const html = `<html>${'<b>'.repeat(250)}<script>self.__UNIVERSAL_DATA_FOR_REHYDRATION__ = ${snapshot}</script>`
+      + '<script>var trailing=1</script></html>'
+
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html)
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) expect(result.videos[0]).toContain('universal.mp4')
+  })
+
+  it('extracts inline aweme_detail objects with nested fields', () => {
+    // 快照里 aweme_detail 后面没有 video_list/log_pb 之类的固定后继键,
+    // 旧的非贪婪正则依赖这些键名收尾,拿不到完整对象;深度扫描则与后继键无关
+    const inline = {
+      aweme_detail: {
+        desc: '直嵌作品',
+        video: {
+          duration: 12000,
+          cover: { url_list: ['https://cover.test/inline.jpg'] },
+          bit_rate: [{
+            format: 'mp4',
+            gear_name: 'normal_1080_0',
+            play_addr: {
+              data_size: 4096,
+              url_list: ['https://video.test/inline.mp4']
+            }
+          }]
+        }
+      }
+    }
+    // 无 __NEXT_DATA__ / __UNIVERSAL_DATA 前缀,只能走 aweme_detail 直嵌兜底
+    const html = `<html>${'<!--pad-->'.repeat(40)}<script>window.__DATA__ = ${JSON.stringify(inline)}</script></html>`
+
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html)
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) {
+      expect(result.videos[0]).toContain('inline.mp4')
+      expect(result.images).toContain('https://cover.test/inline.jpg')
+    }
+  })
+
+  it('finds aweme_detail inside nested page props', () => {
+    const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
+      props: {
+        pageProps: {
+          aweme_detail: {
+            desc: '页面参数作品',
+            video: {
+              duration: 12000,
+              cover: { url_list: ['https://cover.test/props.jpg'] },
+              bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/props.mp4'] } }]
+            }
+          }
+        }
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) expect(result.videos[0]).toContain('props.mp4')
+  })
+
+  it('finds aweme_detail inside universal default scope', () => {
+    const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
+      __DEFAULT_SCOPE__: {
+        'webapp.video-detail': {
+          status_code: 0,
+          aweme_detail: {
+            desc: '全局作用域作品',
+            video: {
+              duration: 12000,
+              cover: { url_list: ['https://cover.test/scope.jpg'] },
+              bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/scope.mp4'] } }]
+            }
+          }
+        }
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) expect(result.videos[0]).toContain('scope.mp4')
+  })
+
+  it('parses full NEXT_DATA page props snapshots', () => {
+    const snapshot = JSON.stringify({
+      props: {
+        pageProps: {
+          aweme_detail: {
+            desc: '页面参数快照',
+            author: { nickname: '作者' },
+            video: {
+              duration: 12000,
+              cover: { url_list: ['https://cover.test/pageprops.jpg'] },
+              bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/pageprops.mp4'] } }]
+            }
+          }
+        }
+      },
+      page: '/video/123',
+      query: { aweme_id: '123' }
+    })
+    const html = `<html>${'<a>'.repeat(120)}<script id="__NEXT_DATA__" type="application/json">${snapshot}</script>`
+      + '<script>var x=1</script></html>'
+
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html)
+
+    expect('ok' in result).toBe(false)
+    if (!('ok' in result)) expect(result.videos[0]).toContain('pageprops.mp4')
+  })
+
+  it('rejects deeply nested payloads without aweme_detail', () => {
+    const result = normalizeDouyinDetail('https://www.douyin.com/video/738', {
+      props: {
+        pageProps: {
+          data: {
+            list: [{ video: { play_addr: { url_list: ['https://video.test/not-aweme.mp4'] } } }]
+          }
+        }
+      }
+    })
+
+    expect(result).toMatchObject({ platform: 'douyin', ok: false })
+  })
+
+  it('applies the configured duration limit to SSR snapshots', () => {
+    const html = `<html>${'<a>'.repeat(120)}<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      aweme_detail: {
+        desc: '超长作品',
+        video: {
+          duration: 900_000,
+          cover: { url_list: ['https://cover.test/long.jpg'] },
+          bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/long.mp4'] } }]
+        }
+      }
+    })}</script></html>`
+
+    const result = normalizeDouyinSsrHtml('https://www.douyin.com/video/123', html, { maxVideoDurationSeconds: 480 })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful normalization')
+    expect(result.videos).toEqual([])
+    expect(result.description).toContain('超过当前下载上限 480 秒')
+  })
+
+  it('keeps SSR downloads inside the configured duration limit', async () => {
+    const html = `<html>${'<a>'.repeat(120)}<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      aweme_detail: {
+        desc: '超长作品',
+        video: {
+          duration: 900_000,
+          cover: { url_list: ['https://cover.test/long.jpg'] },
+          bit_rate: [{ format: 'mp4', gear_name: 'normal_1080_0', play_addr: { url_list: ['https://video.test/long.mp4'] } }]
+        }
+      }
+    })}</script></html>`
+    const fetchMock = vi.fn(async () => new Response(html, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveDouyin('https://www.douyin.com/video/7380000000000000000', '', [])
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('douyin.com/video/7380000000000000000'),
+      expect.objectContaining({ headers: expect.objectContaining({ Referer: 'https://www.douyin.com/' }) })
+    )
+    expect(runtimeMocks.downloadFile).not.toHaveBeenCalled()
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.videos).toEqual([])
+    expect(result.description).toContain('超过当前下载上限 480 秒')
   })
 })

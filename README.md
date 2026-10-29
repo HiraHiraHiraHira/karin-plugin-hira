@@ -17,7 +17,7 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 - 翻译：`翻中/翻英/翻日/...`，优先 DeepLX，可配置备用接口。
 - AI 总结：`#总结一下 <链接>`，使用 OpenAI 兼容接口。
 - 帮助与配置：`#Hira帮助`、多选点歌列表、`#Hira状态` 和音乐 Cookie 状态优先返回 KKK 风格图片卡片；Karin WebUI 使用自带配置页管理基础、点歌、多平台解析、运行时、轻量功能和 AI 配置。
-- 运行时工具：临时文件清理（每小时一次的定时任务，`#清理垃圾` 可手动触发）、下载超时、视频/音频/封面/临时目录容量上限、ffmpeg/ffprobe 路径和语音转码配置。
+- 运行时工具：临时文件清理（每小时一次的定时任务，`#Hira清理垃圾`/`#清理垃圾` 可手动触发）、下载超时、视频/音频/封面/临时目录容量上限、ffmpeg 路径和语音转码配置。
 
 ## 命令
 
@@ -99,9 +99,9 @@ cd plugins/karin-plugin-hira && pnpm install
 默认配置在 `config/default_config/`：
 
 - `app.yaml`：基础开关、回复前缀和命令名。回复前缀只用于普通命令，多平台解析结果不会附加此前缀。
-- `music.yaml`：点歌源、列表会话、语音、语音码率（`highQuality`，开启后 `#语音N` 用 128kbps 双声道转码）、B站音乐 App 凭据、Cookie 和音乐 API。其中 `api.aggregatorUrl` 是聚合音源（默认 `https://music.txqq.pro/`），原生接口失效时兜底搜索与直链；`api.aggregatorEnabled` 可关掉它。
+- `music.yaml`：点歌源、列表会话、语音、高品质（`highQuality` 同时控制语音转码码率与网易云音源档位：开启后 `#语音N` 用 128kbps 双声道、网易云请求 `lossless`，关闭则 32kbps 单声道 / `exhigh`）、B站音乐 App 凭据、Cookie 和音乐 API。其中 `api.aggregatorUrl` 是聚合音源（默认 `https://music.txqq.pro/`），原生接口失效时兜底搜索与直链；`api.aggregatorEnabled` 可关掉它。
 - `resolver.yaml`：多平台解析开关、KKK 兼容、平台开关、发送策略、媒体策略、诊断日志、B站/抖音下载上限、画质、编码、Cookie 和通用解析 API。
-- `runtime.yaml`：临时目录（默认 `@karinjs/temp/<插件名>`，协议端可读）、自动清理、ffmpeg/ffprobe、下载超时，以及单个视频、单个音频、预览封面和临时目录容量上限。
+- `runtime.yaml`：临时目录（默认 `@karinjs/temp/<插件名>`，协议端可读）、自动清理、保留时长、ffmpeg 路径、下载超时，以及单个视频、单个音频、预览封面和临时目录容量上限。
 - `light.yaml`：轻量命令使用的外部 API。
 - `translate.yaml`：翻译接口。
 - `ai.yaml`：OpenAI 兼容接口、模型和网页总结开关。
@@ -126,7 +126,7 @@ AI 网页总结仅开放给 owner/admin，输入地址必须是 HTTP(S) 公网�
 
 纯数字消息如 `1` 只会在当前存在点歌列表会话时被 Hira 消费，避免影响其它插件。`#听1`、`#播放1` 仍属于 Hira 点歌命令。
 
-`音乐 <B站链接>` 只用于把 B站视频提取为音乐播放，和普通 B站裸链解析分开处理。
+`音乐 <B站链接>` 只用于把 B站视频提取为音乐播放，和普通 B站裸链解析分开处理；`b23.tv` 短链会先还原到含 BV 号的落地页，找不到 BV 号时直接提示错误而不是发一条空结果。
 
 `resolver.kkkCompat: true` 时，Hira 不接管 B站、抖音、快手、小红书裸链，避免和 KKK 重复回复。
 

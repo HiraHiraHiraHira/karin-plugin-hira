@@ -19,6 +19,9 @@ describe('readConfig 缓存', () => {
   beforeAll(() => {
     fs.rmSync(testBase, { recursive: true, force: true })
     fs.mkdirSync(configDir, { recursive: true })
+    // `@/config` 在首次导入时读取 HIRA_CONFIG_ROOT；本文件必须指到自己的目录，
+    // 否则会读到 vitest 全局隔离目录里的默认值，断言看不到这里写入的 YAML。
+    process.env.HIRA_CONFIG_ROOT = configDir
   })
 
   afterAll(() => {

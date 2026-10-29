@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultConfig } from '@/config/defaults'
+import { Config } from '@/config'
 import { buildResolverStageLog, logResolverStage } from '@/resolvers/resolverLog'
 
 describe('resolver stage logging', () => {
   afterEach(() => {
-    defaultConfig.resolver.diagnostics.stageLogsEnabled = true
-    defaultConfig.resolver.diagnostics.verboseLogsEnabled = true
+    Config.resolver.diagnostics.stageLogsEnabled = true
+    Config.resolver.diagnostics.verboseLogsEnabled = true
   })
 
   it('formats stage logs without leaking cookies or full sensitive values', () => {
@@ -62,7 +62,8 @@ describe('resolver stage logging', () => {
   })
 
   it('can suppress verbose successful stage logs while preserving failure warnings', () => {
-    defaultConfig.resolver.diagnostics.verboseLogsEnabled = false
+    const originalVerbose = Config.resolver.diagnostics.verboseLogsEnabled
+    Config.resolver.diagnostics.verboseLogsEnabled = false
     const logger = {
       debug: vi.fn(),
       warn: vi.fn()
@@ -82,5 +83,6 @@ describe('resolver stage logging', () => {
 
     expect(logger.debug).not.toHaveBeenCalled()
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('[resolver:weibo] stage=api ok=false reason=403'))
+    Config.resolver.diagnostics.verboseLogsEnabled = originalVerbose
   })
 })

@@ -477,6 +477,10 @@ export const checkAndNotifyUpdate = async () => {
 }
 
 export const handleHiraUpdateReply = async (e: Message, next?: HookNext) => {
+  if (!isHiraAppEnabled()) {
+    await next?.()
+    return
+  }
   if (e.msg.includes('更新')) {
     const msgId = await db.get(UPDATE_MSGID_KEY)
     if (typeof msgId === 'string' && e.replyId === msgId) {

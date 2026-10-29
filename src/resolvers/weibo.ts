@@ -326,21 +326,30 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
     }
 
     return normalizeWeiboStatus(url, status, comments)
-  } catch (error) {
+  } catch {
+    // 接口失败时只能退回页面标题；页面也拿不到就明确报错，不要发一条空卡片冒充解析成功。
     try {
       const html = await fetchResolverText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
-      const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '微博')
-      return {
-        platform: 'weibo',
-        displayName: '微博',
-        title,
-        pageUrl: url,
-        videos: [],
-        images: []
+      const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '')
+      if (title && title !== '微博') {
+        return {
+          platform: 'weibo',
+          displayName: '微博',
+          title,
+          pageUrl: url,
+          videos: [],
+          images: []
+        }
       }
     } catch {
-      // 兜底详情页也拿不到时，把最初的中文错误交给上层展示成失败卡片
-      throw error
+      // Fall through to the explicit failure below.
+    }
+
+    return {
+      platform: 'weibo',
+      displayName: '微博',
+      ok: false,
+      reason: cookie ? '微博页面和接口都没有返回内容，Cookie 可能已失效' : '微博页面和接口都没有返回内容，可尝试配置 resolver.cookies.weibo'
     }
   }
 }

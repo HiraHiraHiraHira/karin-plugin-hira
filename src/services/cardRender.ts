@@ -27,6 +27,7 @@ export type HelpCardGroup = {
 }
 
 export type MusicListCardItem = {
+  index?: number
   title: string
   artists: string
   duration?: string
@@ -1004,7 +1005,7 @@ export const buildHelpCardHtml = (groups: HelpCardGroup[]) => renderTemplateHtml
     </div>`
 })
 
-export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number) => renderTemplateHtml({
+export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number, startIndex = 1) => renderTemplateHtml({
   eyebrow: 'SEARCH RESULTS',
   hero: 'MUSIC',
   title: '点歌列表',
@@ -1013,9 +1014,9 @@ export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number)
   footer: 'Send a number to choose a track',
   body: `
       <div class="music-list">
-        ${items.map((item, index) => `
+        ${items.map((item, position) => `
         <article class="music-row">
-          <div class="music-index">${index + 1}</div>
+          <div class="music-index">${item.index ?? startIndex + position}</div>
           <div class="song-main">
             <h2 class="song-title">${escapeHtml(compactText(item.title, 56))}</h2>
             <p class="song-artists">${escapeHtml(compactText(item.artists, 70))}</p>

@@ -137,7 +137,6 @@ export type RuntimeConfig = {
   cleanupEnabled: boolean
   cleanupMaxAgeMinutes: number
   ffmpegPath: string
-  ffprobePath: string
   downloadTimeoutSeconds: number
   maxVideoFileSizeBytes: number
   maxAudioFileSizeBytes: number

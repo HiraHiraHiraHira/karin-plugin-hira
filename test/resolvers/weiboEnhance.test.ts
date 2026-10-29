@@ -260,6 +260,10 @@ describe('weibo enhanced normalization', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(resolveWeibo('https://weibo.com/1886633831/R47877p8L')).rejects.toThrow('微博接口没有返回数据')
+    await expect(resolveWeibo('https://weibo.com/1886633831/R47877p8L')).resolves.toMatchObject({
+      platform: 'weibo',
+      ok: false,
+      reason: '微博页面和接口都没有返回内容，可尝试配置 resolver.cookies.weibo'
+    })
   })
 })

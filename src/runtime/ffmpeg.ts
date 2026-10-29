@@ -110,20 +110,3 @@ export const runFfmpeg = async (options: FfmpegBuildOptions) => {
   })
   return options.output
 }
-
-export const probeDurationSeconds = async (filePath: string) => {
-  const { stdout } = await execFileAsync(Config.runtime.ffprobePath || 'ffprobe', [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration',
-    '-of',
-    'default=noprint_wrappers=1:nokey=1',
-    filePath
-  ], {
-    windowsHide: true,
-    timeout: 10_000
-  })
-  const value = Number(stdout.trim())
-  return Number.isFinite(value) ? value : undefined
-}

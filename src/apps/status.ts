@@ -83,6 +83,15 @@ export const status = karin.command(statusReg, async (e, next) => {
   name: 'Hira-状态'
 })
 
+/** `cleanupEnabled` 打开时每小时按保留时长和容量上限清理一次临时目录。 */
+export const runtimeCleanup = karin.task('hira-临时文件清理', '0 * * * *', async () => {
+  cleanupRuntimeTemp()
+  return true
+}, {
+  name: 'hira-临时文件清理',
+  log: false
+})
+
 export const cleanup = karin.command(cleanupReg, async (e, next) => {
   if (!isHiraAppEnabled()) return next?.()
   const result = cleanupRuntimeTemp()

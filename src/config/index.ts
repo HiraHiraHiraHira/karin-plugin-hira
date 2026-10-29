@@ -13,9 +13,19 @@ import { defaultConfig } from './defaults'
 
 type ConfigName = keyof HiraConfig
 
-const userConfigDir = path.join(karinPathBase, Root.pluginName, 'config')
+const fallbackConfigDir = path.join(karinPathBase, Root.pluginName, 'config')
+// 测试可以指向空目录，避免读到 Karin 运行目录里的真实插件配置。
+const configRootDir = process.env.HIRA_CONFIG_ROOT?.trim() || fallbackConfigDir
 const defaultConfigDir = path.join(Root.pluginPath, 'config', 'default_config')
-const clone = <T>(value: T): T => structuredClone(value)
+const clone = <T>(value: T): T => {
+  if (Array.isArray(value)) return value.map(item => clone(item)) as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, clone(item)])
+    ) as T
+  }
+  return value
+}
 
 type ConfigCacheEntry = {
   mtimeMs: number
@@ -49,7 +59,7 @@ const merge = <T extends Record<string, unknown>>(base: T, override: Partial<T>)
 const readConfig = <T extends ConfigName>(name: T): HiraConfig[T] => {
   const fallback = defaultConfig[name]
   try {
-    const file = path.join(userConfigDir, `${name}.yaml`)
+    const file = path.join(configRootDir, `${name}.yaml`)
     if (!fs.existsSync(file)) {
       configCache.delete(name)
       return fallback
@@ -106,8 +116,8 @@ const atomicWrite = (file: string, content: string) => {
 }
 
 const writeConfig = <T extends ConfigName>(name: T, value: HiraConfig[T]) => {
-  fs.mkdirSync(userConfigDir, { recursive: true })
-  const file = path.join(userConfigDir, `${name}.yaml`)
+  fs.mkdirSync(configRootDir, { recursive: true })
+  const file = path.join(configRootDir, `${name}.yaml`)
   const normalized = clone(value)
   atomicWrite(file, YAML.stringify(normalized))
 }
@@ -124,17 +134,35 @@ export const readAllConfig = (): HiraConfig => ({
 
 export const saveAllConfig = (config: HiraConfig) => {
   for (const name of Object.keys(defaultConfig) as ConfigName[]) {
-    writeConfig(name, config[name])
+    writeConfig(name, conformToDefaults(defaultConfig[name], config[name]))
   }
 }
 
+/** 以默认值为 schema 重建配置，丢掉旧版本遗留的键，避免已删除的配置项在保存时复活。 */
+const conformToDefaults = <T>(schema: T, value: unknown): T => {
+  if (Array.isArray(schema)) return (Array.isArray(value) ? value : schema) as T
+  if (!schema || typeof schema !== 'object') {
+    // 数字项允许以字符串落盘（YAML 加引号、人为手改），能无损转成数字就接受，其余类型不匹配仍回退默认值。
+    if (typeof schema === 'number' && typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+      return Number(value) as T
+    }
+    return (value === undefined || typeof value !== typeof schema ? schema : value) as T
+  }
+  const source = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(schema as Record<string, unknown>)) {
+    result[key] = conformToDefaults(item, source[key])
+  }
+  return result as T
+}
+
 export const saveConfigModule = <T extends ConfigName>(name: T, value: HiraConfig[T]) => {
-  writeConfig(name, merge(defaultConfig[name] as Record<string, unknown>, value as Record<string, unknown>) as HiraConfig[T])
+  writeConfig(name, conformToDefaults(defaultConfig[name], value))
 }
 
 export const initConfig = () => {
   try {
-    copyConfigSync(defaultConfigDir, userConfigDir)
+    copyConfigSync(defaultConfigDir, configRootDir)
   } catch (error) {
     logger.warn(`[karin-plugin-hira] 初始化配置失败: ${error}`)
   }

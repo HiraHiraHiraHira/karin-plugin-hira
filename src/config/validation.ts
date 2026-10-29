@@ -43,7 +43,7 @@ const urlPaths: Array<{ path: string, allowEmpty?: boolean, allowCredentials?: b
   { path: 'light.buyerShowApis', allowEmpty: true },
   { path: 'light.tiredApis', allowEmpty: true },
   { path: 'light.medicineApi' },
-  { path: 'light.softwareApi' },
+  { path: 'light.softwareApi', allowEmpty: true },
   { path: 'translate.deeplxApi', allowEmpty: true },
   { path: 'translate.tencentApi' },
   { path: 'ai.apiBaseUrl' }

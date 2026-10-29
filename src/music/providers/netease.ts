@@ -9,6 +9,7 @@ import { aggregatorAudioUrl, aggregatorSearch } from './aggregator'
 type NeteaseProviderOptions = {
   baseUrl: string
   cookie?: string
+  highQuality?: boolean
   fetchJson?: <T = unknown>(url: string, options?: Parameters<typeof fetchJson>[1]) => Promise<T>
 }
 
@@ -36,11 +37,13 @@ export class NeteaseProvider implements MusicProvider {
   readonly source = 'netease' as const
   private readonly baseUrl: string
   private readonly cookie: string
+  private readonly level: string
   private readonly requestJson: NonNullable<NeteaseProviderOptions['fetchJson']>
 
   constructor(options: NeteaseProviderOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '')
     this.cookie = options.cookie ?? ''
+    this.level = options.highQuality ? 'lossless' : 'exhigh'
     this.requestJson = options.fetchJson ?? fetchJson
   }
 
@@ -87,7 +90,7 @@ export class NeteaseProvider implements MusicProvider {
 
     if (this.cookie.includes('MUSIC_U=')) {
       try {
-        const request = buildNeteaseHighQualityRequest(item.id)
+        const request = buildNeteaseHighQualityRequest(item.id, this.level)
         const data = await this.requestJson<{ data?: Array<{ url?: string, level?: string }> }>(request.url, {
           method: 'POST',
           body: request.body,
@@ -118,7 +121,7 @@ export class NeteaseProvider implements MusicProvider {
       return { item, audioUrl: fallbackUrl }
     }
 
-    const url = `${this.baseUrl}/song/url/v1?id=${encodeURIComponent(item.id)}&level=exhigh`
+    const url = `${this.baseUrl}/song/url/v1?id=${encodeURIComponent(item.id)}&level=${this.level}`
     const data = await this.requestJson<{ data?: Array<{ url?: string, level?: string }> }>(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})
     const playable = data.data?.[0]
 
@@ -160,11 +163,11 @@ export class NeteaseProvider implements MusicProvider {
   }
 }
 
-export const buildNeteaseHighQualityRequest = (id: string) => ({
+export const buildNeteaseHighQualityRequest = (id: string, level = 'exhigh') => ({
   url: 'https://interface3.music.163.com/api/song/enhance/player/url/v1',
   body: new URLSearchParams({
     ids: `[${id}]`,
-    level: 'exhigh',
+    level,
     encodeType: 'mp3'
   }).toString()
 })

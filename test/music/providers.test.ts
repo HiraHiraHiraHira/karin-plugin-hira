@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { BilibiliMusicProvider, extractBvFromText } from '@/music/providers'
 import { formatArtists, normalizeDuration, requirePlayableUrl } from '@/music/providers/helpers'
 
 describe('music provider helpers', () => {
@@ -18,5 +19,18 @@ describe('music provider helpers', () => {
   it('rejects empty playable URLs', () => {
     expect(requirePlayableUrl('https://example.test/a.mp3')).toBe('https://example.test/a.mp3')
     expect(() => requirePlayableUrl('')).toThrow('没有拿到可播放的音频链接')
+  })
+})
+
+describe('Bilibili music link handling', () => {
+  it('extracts BV ids from links, short text params, and rejects links without one', () => {
+    expect(extractBvFromText('https://www.bilibili.com/video/BV1xx411c7mD?spm_id_from=333')).toBe('BV1xx411c7mD')
+    expect(extractBvFromText('bilibili://video/BV1xx411c7mD')).toBe('BV1xx411c7mD')
+    expect(extractBvFromText('https://b23.tv/abcdef')).toBeUndefined()
+  })
+
+  it('fails loudly instead of pretending an unresolvable link is playable', async () => {
+    const provider = new BilibiliMusicProvider({ appKey: 'k', appSecret: 's' })
+    await expect(provider.fromLink('https://b23.tv/abcdef')).rejects.toThrow('BV')
   })
 })

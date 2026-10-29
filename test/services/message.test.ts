@@ -1,9 +1,11 @@
 import type { Message } from 'node-karin'
+import { segment } from 'node-karin'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultConfig } from '@/config/defaults'
+import { Config } from '@/config'
 import type { ResolvedPost } from '@/resolvers/types'
-import { replyMusicList, replyResolvedPost } from '@/services/message'
+import { bustImageUrls, nativeMusicCard, replyMusicList, replyResolvedPost, withCacheBuster } from '@/services/message'
 
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
@@ -597,7 +599,9 @@ describe('replyResolvedPost', () => {
   })
 
   it('skips rich comment forwards when resolver comments are disabled', async () => {
-    defaultConfig.resolver.commentsEnabled = false
+    const resolver = Config.resolver
+    const original = resolver.commentsEnabled
+    resolver.commentsEnabled = false
     const reply = vi.fn(async () => ({}))
     const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
     const contact = { scene: 'group', peer: '887223378', name: '测试群' }
@@ -648,10 +652,13 @@ describe('replyResolvedPost', () => {
         summary: '查看完整图文'
       })
     )
+    resolver.commentsEnabled = original
   })
 
   it('skips rich content forwards when content forwards are disabled', async () => {
-    defaultConfig.resolver.sending.contentForwardEnabled = false
+    const resolver = Config.resolver
+    const original = resolver.sending.contentForwardEnabled
+    resolver.sending.contentForwardEnabled = false
     const reply = vi.fn(async () => ({}))
     const sendForwardMsg = vi.fn(async () => ({ messageId: 'forward-message' }))
     const contact = { scene: 'group', peer: '887223378', name: '测试群' }
@@ -692,6 +699,7 @@ describe('replyResolvedPost', () => {
       { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
     ])
     expect(sendForwardMsg).not.toHaveBeenCalled()
+    resolver.sending.contentForwardEnabled = original
   })
 
   it('sends Tieba rich posts with the shared preview card and fake forwards', async () => {
@@ -865,7 +873,9 @@ describe('replyResolvedPost', () => {
   })
 
   it('can suppress video failure fallback text from resolver sending settings', async () => {
-    defaultConfig.resolver.sending.videoFailureFallbackEnabled = false
+    const resolver = Config.resolver
+    const original = resolver.sending.videoFailureFallbackEnabled
+    resolver.sending.videoFailureFallbackEnabled = false
     const reply = vi.fn(async (payload: unknown) => {
       if (typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'video') {
         throw new Error('remote video expired')
@@ -887,6 +897,7 @@ describe('replyResolvedPost', () => {
 
     const calls = reply.mock.calls as unknown as Array<[unknown]>
     expect(calls.some(([payload]) => typeof payload === 'string' && payload.includes('视频发送失败'))).toBe(false)
+    resolver.sending.videoFailureFallbackEnabled = original
   })
 
   it('uploads local group videos as files when they exceed the message size limit', async () => {
@@ -986,5 +997,76 @@ describe('replyResolvedPost', () => {
     expect(reply).toHaveBeenCalledWith([
       { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
     ])
+  })
+})
+
+describe('nativeMusicCard', () => {
+  it('maps valid platform ids to native music cards', () => {
+    expect(nativeMusicCard('netease', '1834567890')).toEqual({ platform: '163', id: '1834567890' })
+    expect(nativeMusicCard('qq', '0039MnYb0qxYhV')).toEqual({ platform: 'qq', id: '0039MnYb0qxYhV' })
+    expect(nativeMusicCard('kuwo', '228908')).toEqual({ platform: 'kuwo', id: '228908' })
+    expect(nativeMusicCard('kugou', 'A1B2C3D4E5F60718293A4B5C6D7E8F90')).toEqual({
+      platform: 'kugou',
+      id: 'A1B2C3D4E5F60718293A4B5C6D7E8F90'
+    })
+  })
+
+  it('rejects ids whose shape the platform adapter cannot render', () => {
+    expect(nativeMusicCard('netease', 'song-1')).toBeUndefined()
+    expect(nativeMusicCard('qq', 'abc')).toBeUndefined()
+    expect(nativeMusicCard('kuwo', 'abc123')).toBeUndefined()
+    expect(nativeMusicCard('kugou', 'A1B2C3D4')).toBeUndefined()
+    expect(nativeMusicCard('bilibili', 'BV1xx411c7mD')).toBeUndefined()
+    expect(nativeMusicCard('netease', '   ')).toBeUndefined()
+  })
+})
+
+describe('withCacheBuster', () => {
+  it('appends a retry parameter to ordinary urls', () => {
+    const plain = withCacheBuster('https://img.example.test/a.jpg')
+    expect(plain).toMatch(/^https:\/\/img\.example\.test\/a\.jpg\?hira-retry=/)
+
+    const withQuery = withCacheBuster('https://img.example.test/a.jpg?w=1080')
+    expect(withQuery).toMatch(/^https:\/\/img\.example\.test\/a\.jpg\?w=1080&hira-retry=/)
+  })
+
+  it('returns signed urls untouched so the signature stays valid', () => {
+    const signed = 'https://cdn.example.test/a.jpg?sign=abc&t=1'
+    expect(withCacheBuster(signed)).toBe(signed)
+
+    const expires = 'https://cdn.example.test/a.jpg?x-expires=1700000000'
+    expect(withCacheBuster(expires)).toBe(expires)
+
+    const aws = 'https://cdn.example.test/a.jpg?X-Amz-Signature=deadbeef'
+    expect(withCacheBuster(aws)).toBe(aws)
+
+    const token = 'https://cdn.example.test/a.jpg?auth_key=abc_123'
+    expect(withCacheBuster(token)).toBe(token)
+
+    // 短签名参数同样不能追加任何字节
+    const sig = 'https://cdn.example.test/a.jpg?sig=deadbeef'
+    expect(withCacheBuster(sig)).toBe(sig)
+  })
+})
+
+describe('bustImageUrls', () => {
+  it('only rewrites http image segments', () => {
+    const text = segment.text('标题')
+    const remote = segment.image('https://img.example.test/a.jpg')
+    const inline = segment.image('base64://AAAA')
+
+    const result = bustImageUrls([text, remote, inline]) as unknown as Array<{ type?: string, file?: string }>
+
+    expect(result).toHaveLength(3)
+    expect(result[0]).toMatchObject({ type: 'text', text: '标题' })
+    expect(result[1]?.file).toMatch(/^https:\/\/img\.example\.test\/a\.jpg\?hira-retry=/)
+    expect(result[2]).toMatchObject({ type: 'image', file: 'base64://AAAA' })
+  })
+
+  it('normalizes a single element into an array before rewriting', () => {
+    const result = bustImageUrls(segment.image('https://img.example.test/a.jpg')) as unknown as Array<{ file?: string }>
+
+    expect(result).toHaveLength(1)
+    expect(result[0]?.file).toMatch(/\?hira-retry=/)
   })
 })

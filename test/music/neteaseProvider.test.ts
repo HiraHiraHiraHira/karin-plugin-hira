@@ -108,3 +108,21 @@ describe('Netease provider helpers', () => {
     })
   })
 })
+
+describe('Netease quality level', () => {
+  it('requests lossless when music.highQuality is enabled and exhigh otherwise', async () => {
+    const levels: string[] = []
+    const requestJson: typeof fetchJson = async <T = unknown>(url: string) => {
+      const level = new URL(decodeURIComponent(String(url))).searchParams.get('level')
+      // 聚合音源也会走这个 requestJson，这里只记录原生播放接口的档位，避免把兜底搜索算进来
+      if (level) levels.push(level)
+      return { data: [{ url: 'https://cdn.example.test/a.mp3', level: 'x' }] } as T
+    }
+    const item = { id: '1', source: 'netease' as const, title: 't', artists: [], pageUrl: 'https://music.163.com/#/song?id=1' }
+
+    await new NeteaseProvider({ baseUrl: 'https://api.example.test', highQuality: false, fetchJson: requestJson }).getPlayable(item)
+    await new NeteaseProvider({ baseUrl: 'https://api.example.test', highQuality: true, fetchJson: requestJson }).getPlayable(item)
+
+    expect(levels).toEqual(['exhigh', 'lossless'])
+  })
+})

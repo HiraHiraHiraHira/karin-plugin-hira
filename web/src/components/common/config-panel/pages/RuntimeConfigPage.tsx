@@ -41,7 +41,6 @@ const RuntimeConfigPage = ({ renderers }: ConfigPageProps) => {
       {renderSubSection('媒体工具', (
         <>
           {renderTextField(['runtime', 'ffmpegPath'], 'ffmpeg 路径', '用于合并 B站 DASH 视频和音频。')}
-          {renderTextField(['runtime', 'ffprobePath'], 'ffprobe 路径', '用于后续媒体信息检测。')}
         </>
       ))}
     </>

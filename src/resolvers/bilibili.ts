@@ -25,6 +25,25 @@ export const extractBvid = (url: string) => {
   return url.match(bvidPattern)?.[0]
 }
 
+/** `?p=2` 分P：B站 view 接口按 bvid 返回默认分P，cid 决定实际下载哪一P。 */
+export const extractBilibiliPage = (url: string) => {
+  try {
+    const page = Number(new URL(url).searchParams.get('p'))
+    return Number.isInteger(page) && page > 0 ? page : 1
+  } catch {
+    return 1
+  }
+}
+
+export const isBilibiliShortUrl = (url: string) => {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase()
+    return hostname === 'b23.tv' || hostname === 'bili2233.cn' || hostname.endsWith('.b23.tv') || hostname.endsWith('.bili2233.cn')
+  } catch {
+    return false
+  }
+}
+
 const formatStat = (label: string, value: unknown) => {
   return typeof value === 'number' ? `${label}：${value}` : ''
 }
@@ -255,10 +274,14 @@ export const normalizeBilibiliVideoInfo = (pageUrl: string, payload: unknown): R
 }
 
 const expandShortUrl = async (url: string) => {
-  const parsed = new URL(url)
-  if (parsed.hostname !== 'b23.tv' && parsed.hostname !== 'bili2233.cn') return url
+  if (!isBilibiliShortUrl(url)) return url
 
-  return resolveResolverRedirectUrl(url)
+  try {
+    return await resolveResolverRedirectUrl(url)
+  } catch {
+    // 跟跳失败（如短链服务拦截 HEAD）时回退到原始短链，让后续 extractBvid 尽力识别。
+    return url
+  }
 }
 
 export const resolveBilibili = async (url: string, cookie = ''): Promise<ResolverResult> => {
@@ -282,8 +305,11 @@ export const resolveBilibili = async (url: string, cookie = ''): Promise<Resolve
   if ('ok' in result) return result
 
   const data = asObject(asObject(payload)?.data)
-  const cid = data?.cid
-  const duration = Number(data?.duration ?? 0)
+  const requestedPage = extractBilibiliPage(finalUrl)
+  const pages = Array.isArray(data?.pages) ? data.pages : []
+  const pageEntry = asObject(pages[requestedPage - 1])
+  const cid = pageEntry?.cid ?? data?.cid
+  const duration = Number(pageEntry?.duration ?? data?.duration ?? 0)
   const resolverConfig = Config.resolver
   const bilibiliConfig = resolverConfig.bilibili
   const maxDuration = normalizeNumber(bilibiliConfig?.maxVideoDurationSeconds ?? resolverConfig.maxVideoDurationSeconds, 480)
@@ -298,7 +324,10 @@ export const resolveBilibili = async (url: string, cookie = ''): Promise<Resolve
   }
   if (!cid) return result
 
-  const pageUrl = result.pageUrl || finalUrl
+  const basePageUrl = result.pageUrl || finalUrl
+  const pageUrl = requestedPage > 1 && !/[?&]p=\d+/.test(basePageUrl)
+    ? `${basePageUrl}${basePageUrl.includes('?') ? '&' : '?'}p=${requestedPage}`
+    : basePageUrl
   const mediaHeaders = {
     ...headers,
     Referer: pageUrl
