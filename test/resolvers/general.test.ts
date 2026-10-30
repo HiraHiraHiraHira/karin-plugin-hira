@@ -267,10 +267,7 @@ describe('resolveGeneral', () => {
       author: 'UP主',
       pageUrl: 'https://www.acfun.cn/v/ac4621380',
       images: ['https://img.example.test/accover.jpg'],
-      videos: [
-        { url: 'https://cdn.example.test/ac.mp4' },
-        { url: 'https://cdn.example.test/ac.m3u8' }
-      ],
+      videos: [{ url: 'https://cdn.example.test/ac.mp4' }],
       extras: {
         coverUrl: 'https://img.example.test/accover.jpg',
         authorAvatar: 'https://img.example.test/up.jpg',
@@ -296,6 +293,28 @@ describe('resolveGeneral', () => {
       displayName: 'AcFun',
       videos: [{ url: 'https://cdn.example.test/ac-fallback.mp4' }]
     })
+  })
+
+  it('does not register m3u8-only AcFun playlists as videos', async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      `window.pageInfo = window.videoInfo = ${JSON.stringify({
+        dougaId: '4621381',
+        title: '仅 HLS 视频',
+        currentVideoInfo: {
+          ksPlayJson: JSON.stringify({
+            adaptationSet: [{ representation: [{ url: 'https://cdn.example.test/only.m3u8' }] }]
+          })
+        }
+      })}`,
+      { status: 200 }
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveGeneral('https://www.acfun.cn/v/ac4621381', ['https://api.example.test/parse?url={url}'])
+
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.videos).toEqual([])
+    expect(result.description).toContain('m3u8')
   })
 
   it('normalizes Xigua short links to the canonical video page before calling APIs', async () => {

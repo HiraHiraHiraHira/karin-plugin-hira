@@ -29,10 +29,14 @@ export type FfmpegBuildOptions =
 
 export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
   if (options.format === 'merge') {
+    // 音轨(BGM)通常比视频片段长: 循环音频并以视频为终点截断, 否则容器时长取
+    // 两者最大值, 用户会收到"画面早停、音乐继续"的长视频 (参考 R ffmpeg-util.js).
     return [
       '-y',
       '-i',
       options.videoInput,
+      '-stream_loop',
+      '-1',
       '-i',
       options.audioInput,
       '-map',
@@ -41,6 +45,7 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
       '1:a:0',
       '-c',
       'copy',
+      '-shortest',
       options.output
     ]
   }

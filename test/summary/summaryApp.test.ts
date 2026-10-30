@@ -68,6 +68,17 @@ describe('summary command', () => {
     expect(options.source).toBe('网页总结')
   })
 
+  it('不带 # 且没有链接的闲聊放行给其它插件', async () => {
+    const { e, reply } = createEvent('总结一下今天的事')
+    const next = vi.fn()
+
+    await summaryHandler(e, next)
+
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(reply).not.toHaveBeenCalled()
+    expect(summaryServiceMock.summarizeUrl).not.toHaveBeenCalled()
+  })
+
   it('非法链接回链接格式无效，而不是静默丢弃', async () => {
     const { e, reply } = createEvent('#总结一下 这不是链接')
 

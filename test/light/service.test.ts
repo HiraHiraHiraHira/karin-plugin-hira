@@ -152,14 +152,14 @@ describe('queryMedicine', () => {
     expect(result.text).toContain('布洛芬')
   })
 
-  it('允许空关键词（R query.js doctor 原样请求全部）', async () => {
+  it('空关键词直接给用法，不发请求（dayi 返回“搜索词不能为空”）', async () => {
     configMock.light.medicineApi = 'https://server.dayi.org.cn/api/search?keyword={keyword}&pageNo=1&pageSize=10'
-    httpMock.fetchJson.mockResolvedValue({ list: [{ title: '阿莫西林', secondTitle: '胶囊', introduction: '抗生素' }] })
 
-    const result = await queryMedicine('')
+    const result = await queryMedicine('  ')
 
-    expect(String(httpMock.fetchJson.mock.calls[0][0])).toContain('keyword=&pageNo=1')
-    expect(result.type).toBe('forward')
+    expect(httpMock.fetchJson).not.toHaveBeenCalled()
+    if (result.type !== 'text') throw new Error('期望文本结果')
+    expect(result.text).toContain('请提供关键词')
   })
 
   it('空列表给出未找到提示', async () => {
@@ -200,6 +200,18 @@ describe('getTiredImages', () => {
     })
 
     await expect(getTiredImages()).resolves.toEqual(['https://img.test/only.jpg'])
+  })
+
+  it('最多返回 9 张并对含空格/CJK 的地址做编码', async () => {
+    httpMock.fetchJson.mockImplementation(async () => ({
+      code: 200,
+      imgurls: Array.from({ length: 12 }, (_, index) => `https://img.test/图 ${index}.jpg`)
+    }))
+
+    const urls = await getTiredImages()
+
+    expect(urls).toHaveLength(9)
+    expect(urls.every(url => !/[\s\u0080-\uffff]/.test(url))).toBe(true)
   })
 
   it('全部失败时抛出可读错误', async () => {

@@ -447,14 +447,16 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
 
       const key = sessionKey(e)
       await recallListMessages(store.takeListMessages(key))
-      const page = command.type === 'favorites' ? command.page ?? 1 : 1
-      store.set(key, items, { keyword: command.type, source: 'qq', page })
 
       if (command.type === 'radio') {
-        // 电台只推歌, 不进入列表选择; 取首条直接播放.
+        // 电台只推歌, 不进入列表选择也不建可翻页会话: 上游 get_radio_track 不接受 page,
+        // 建会话会让 #下一页 重复拉同一批歌 (评审 I2). 取首条直接播放.
         await replyMusicPlayable(e, await provider.getPlayable(items[0]))
         return true
       }
+
+      const page = command.type === 'favorites' ? command.page ?? 1 : 1
+      store.set(key, items, { keyword: command.type, source: 'qq', page })
 
       const listMessageId = await replyMusicList(e, items, page, { startIndex: 1 })
       if (listMessageId) store.addListMessage(key, { contact: e.contact, selfId: e.selfId, messageId: listMessageId })

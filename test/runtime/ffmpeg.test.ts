@@ -66,10 +66,12 @@ describe('buildFfmpegArgs', () => {
       audioInput: 'audio.m4s',
       output: 'out.mp4',
       format: 'merge'
-    } as any)).toEqual([
+    })).toEqual([
       '-y',
       '-i',
       'video.m4s',
+      '-stream_loop',
+      '-1',
       '-i',
       'audio.m4s',
       '-map',
@@ -78,6 +80,7 @@ describe('buildFfmpegArgs', () => {
       '1:a:0',
       '-c',
       'copy',
+      '-shortest',
       'out.mp4'
     ])
   })

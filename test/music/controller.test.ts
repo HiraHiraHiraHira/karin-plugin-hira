@@ -270,4 +270,20 @@ describe('handleMusicMessage', () => {
     expect(providerMocks.getPersonalized).toHaveBeenCalledWith('random', expect.objectContaining({ pageSize: expect.any(Number) }))
     expect(messageMocks.replyMusicPlayable).toHaveBeenCalled()
   })
+
+  it('does not keep a paginatable session after radio', async () => {
+    const { handleMusicMessage } = await loadController()
+    providerMocks.getPersonalized.mockResolvedValue([item('1'), item('2')])
+    const identity = { userId: 'radio-user', contact: { scene: 'friend', peer: 'radio-user', name: 'radio-user' } }
+
+    await handleMusicMessage(eventOf('#个性电台', identity), next)
+    expect(messageMocks.replyMusicPlayable).toHaveBeenCalledTimes(1)
+    expect(messageMocks.replyMusicList).not.toHaveBeenCalled()
+
+    providerMocks.getPersonalized.mockClear()
+    await handleMusicMessage(eventOf('#下一页', identity), next)
+    // 电台不建会话: 翻页不应再拉同一批电台歌 (评审 I2).
+    expect(providerMocks.getPersonalized).not.toHaveBeenCalled()
+    expect(messageMocks.replyMusicList).not.toHaveBeenCalled()
+  })
 })

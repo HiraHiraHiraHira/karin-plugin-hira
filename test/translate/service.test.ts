@@ -125,15 +125,12 @@ describe('translateText transmart protocol', () => {
     await expect(translateText('你好', 'en')).rejects.toThrow(/unsupported_lang/)
   })
 
-  it('跳过 DeepLX 文言文请求，直接走 transmart', async () => {
-    // DeepL 语言表没有 WYW，直接请求只会白失败一次再走兜底。
+  it('文言文目标不可用时不发任何请求，直接给出可读提示', async () => {
+    // transmart 实测返回 Unrecognized target language: wyw；DeepLX 也没有该语言。
     configMock.translate.deeplxApi = 'https://deeplx.test/translate'
-    transmartMock()
 
-    await expect(translateText('你好', 'wyw')).resolves.toBe('译文:你好->wyw')
+    await expect(translateText('你好', 'wyw')).rejects.toThrow(/暂不支持翻译为文言文/)
 
-    const urls = fetchJsonMock.mock.calls.map(call => String(call[0]))
-    expect(urls).not.toContain('https://deeplx.test/translate')
-    expect(bodyOf(fetchJsonMock.mock.calls[1]).target).toEqual({ lang: 'wyw' })
+    expect(fetchJsonMock).not.toHaveBeenCalled()
   })
 })

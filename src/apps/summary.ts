@@ -84,6 +84,8 @@ export const summaryHandler = async (e: Message, next?: () => unknown) => {
 
   const url = requestUrls(message.replace(summaryCommandReg, ''))[0]
   if (!url) {
+    // 只有显式命令（以 # 开头）才回用法; "总结一下今天的事"这类闲聊必须放行给其它插件.
+    if (!message.startsWith('#')) return next?.()
     // R llm-util.js 的 llmRead：非 http(s) 链接直接告知格式无效，而不是静默丢弃
     await replyPlainText(e, '链接格式无效，请发送 http/https 链接。例：#总结一下 https://example.com/article')
     return true
@@ -115,5 +117,8 @@ export const summary = karin.command(summaryCommandReg, summaryHandler, {
 })
 
 export const summaryAuto = karin.command(autoSummaryReg, summaryAutoHandler, {
-  name: 'Hira-AI自动总结'
+  name: 'Hira-AI自动总结',
+  // 必须晚于 light/translate/music/resolver(670-900) 等命令: 否则"#点歌 晴天 <github 链接>"
+  // 会先被自动总结吞掉. 同一条消息若已被其它 Hira 命令消费就不会走到这里.
+  priority: 950
 })

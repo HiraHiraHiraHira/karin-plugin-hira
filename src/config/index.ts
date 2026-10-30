@@ -56,6 +56,36 @@ const merge = <T extends Record<string, unknown>>(base: T, override: Partial<T>)
   return result as T
 }
 
+const legacyTranslateApi = 'https://api.interpreter.caiyunai.com/v1/translator'
+const legacyLightApis = [
+  'https://api.vvhan.com/api/tao',
+  'https://api.vvhan.com/api/wallpaper/views'
+]
+
+/**
+ * 升级迁移 (评审 R1): 旧版本 yaml 里的默认值会覆盖新 defaultConfig (merge 旧值优先),
+ * 而这些地址已下线或协议已变更, 不迁移会让升级用户"开箱必失败".
+ * 只替换"恰好等于旧默认值"的项, 用户自定义值保持不动; 不写盘, 下次 WebUI 保存自然落新值.
+ */
+const migrateLegacyDefaults = <T extends ConfigName>(name: T, config: HiraConfig[T]): HiraConfig[T] => {
+  if (name === 'translate') {
+    const translate = config as HiraConfig['translate']
+    if (translate.tencentApi.trim() === legacyTranslateApi) {
+      translate.tencentApi = defaultConfig.translate.tencentApi
+    }
+  }
+  if (name === 'light') {
+    const light = config as HiraConfig['light']
+    if (light.buyerShowApis.length === 1 && light.buyerShowApis[0] === legacyLightApis[0]) {
+      light.buyerShowApis = [...defaultConfig.light.buyerShowApis]
+    }
+    if (light.tiredApis.length === 1 && light.tiredApis[0] === legacyLightApis[1]) {
+      light.tiredApis = [...defaultConfig.light.tiredApis]
+    }
+  }
+  return config
+}
+
 const readConfig = <T extends ConfigName>(name: T): HiraConfig[T] => {
   const fallback = defaultConfig[name]
   try {
@@ -75,12 +105,12 @@ const readConfig = <T extends ConfigName>(name: T): HiraConfig[T] => {
     const cached = stat ? configCache.get(name) : undefined
     if (stat && cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
       // 命中缓存：直接用缓存的解析结果 merge，merge 内部会 clone，保证每次返回全新对象
-      return merge(fallback as Record<string, unknown>, cached.parsed) as HiraConfig[T]
+      return migrateLegacyDefaults(name, merge(fallback as Record<string, unknown>, cached.parsed) as HiraConfig[T])
     }
 
     const parsed = requireFileSync(file, { force: true }) as Record<string, unknown>
     if (stat) configCache.set(name, { mtimeMs: stat.mtimeMs, size: stat.size, parsed })
-    return merge(fallback as Record<string, unknown>, parsed) as HiraConfig[T]
+    return migrateLegacyDefaults(name, merge(fallback as Record<string, unknown>, parsed) as HiraConfig[T])
   } catch (error) {
     logger.warn(`[karin-plugin-hira] 读取配置 ${name}.yaml 失败，使用默认配置: ${error}`)
     return fallback

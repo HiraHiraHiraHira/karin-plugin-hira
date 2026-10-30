@@ -89,13 +89,16 @@ const translateWithTransmart = async (text: string, target: TranslateTarget, sou
 export const resolveDeeplxUrls = (raw: string) => raw.split(',').map(url => url.trim()).filter(Boolean)
 
 export const translateText = async (text: string, target: TranslateTarget) => {
+  // transmart 明确拒绝 wyw（Unrecognized target language），DeepL/DeepLX 也没有该语言，
+  // 与其白跑一次接口再回失败，不如直接给出可读提示。
+  if (target === 'wyw') throw new Error('暂不支持翻译为文言文：当前翻译接口没有 wyw 语言支持。')
+
   const timeoutMs = Config.translate.timeoutSeconds * 1000
   const failures: string[] = []
   const sourceLang = await detectSourceLanguage(text, timeoutMs)
 
-  // DeepL 语言表没有 `WYW`（文言文），带配置请求只会白白失败一次再走兜底。
   const deeplxUrls = resolveDeeplxUrls(Config.translate.deeplxApi)
-  if (target !== 'wyw' && deeplxUrls.length > 0) {
+  if (deeplxUrls.length > 0) {
     const url = deeplxUrls[Math.floor(Math.random() * deeplxUrls.length)]
     try {
       const payload = await fetchJson<DeepLXResponse>(url, {

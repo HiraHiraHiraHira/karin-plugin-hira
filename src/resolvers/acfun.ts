@@ -79,7 +79,11 @@ const representationUrls = (info: Record<string, any>) => {
   }
 }
 
-/** 有 mp4 直链时优先用它，m3u8 只作为直链候补（发送侧按需转封装）。 */
+/**
+ * 只登记可直接下载发送的 mp4 直链。
+ * AcFun 的 ksPlayJson representation 一律是 m3u8（HLS 分片清单），发送侧没有 HLS 合并能力，
+ * 把 playlist 当媒体下载只会发出不可播放的"视频"（评审 B2）。仅有 m3u8 时不给 videos，由文案提示。
+ */
 const streamUrls = (info: Record<string, any>) => {
   const streams = Array.isArray(info.currentVideoInfo?.streams) ? info.currentVideoInfo.streams : []
   const mp4: string[] = []
@@ -88,10 +92,10 @@ const streamUrls = (info: Record<string, any>) => {
     const list = Array.isArray(playUrls) ? playUrls : []
     for (const play of list) {
       const url = firstString(asObject(play)?.url, asObject(play)?.playUrl)
-      if (url) mp4.push(url)
+      if (url && /\.mp4(?:$|[?#])/i.test(url)) mp4.push(url)
     }
   }
-  return [...mp4, ...representationUrls(info)]
+  return mp4
 }
 
 const failure = (reason: string): ResolverFailure => ({
@@ -125,9 +129,12 @@ export const normalizeAcfunVideo = (url: string, info: unknown): ResolvedPost | 
     ['收藏', firstNumber(video.stowCount, video.collectCount)]
   ].filter((entry): entry is [string, number] => entry[1] !== undefined)
 
+  const videos = streamUrls(video)
+  const hlsOnly = videos.length === 0 && representationUrls(video).length > 0
   const description = [
     firstString(video.description),
-    stats.length > 0 ? stats.map(([label, value]) => `${label} ${value}`).join(' · ') : ''
+    stats.length > 0 ? stats.map(([label, value]) => `${label} ${value}`).join(' · ') : '',
+    hlsOnly ? 'AcFun 仅返回 m3u8 播放列表，暂不支持发送内嵌视频，可点击原链接观看。' : ''
   ].filter(Boolean).join('\n')
 
   const contentBlocks: RichContentBlock[] = [
@@ -147,7 +154,7 @@ export const normalizeAcfunVideo = (url: string, info: unknown): ResolvedPost | 
     description,
     author: firstString(author?.name),
     pageUrl,
-    videos: streamUrls(video).map(videoUrl => ({ url: videoUrl })),
+    videos: videos.map(videoUrl => ({ url: videoUrl })),
     images: cover ? [cover] : [],
     extras: {
       coverUrl: cover,

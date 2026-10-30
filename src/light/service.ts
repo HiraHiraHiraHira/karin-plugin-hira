@@ -78,11 +78,15 @@ export const getCatImages = async (limit = 10): Promise<string[]> => {
 
 export const getBuyerShowImage = () => fetchFirstImage(Config.light.buyerShowApis, '买家秀')
 
+/** imgapi 的图片地址可能带空格/CJK, 适配器取图前先编码; 纯 ASCII 地址原样保留避免二次编码. */
+const encodeImageUrl = (url: string) => (/[\s\u0080-\uffff]/.test(url) ? encodeURI(url) : url)
+
 /** 累了：imgapi 的 cos/cos2 返回 `{imgurls: []}`，两张接口全部取回后合并。 */
 export const getTiredImages = async (): Promise<string[]> => {
   const urls = await fetchImagesFrom(Config.light.tiredApis)
   if (urls.length === 0) throw new Error('累了接口暂时不可用')
-  return urls
+  // 合并转发一条消息最多 9 张, 避免刷屏; 地址先编码再交给适配器.
+  return urls.slice(0, 9).map(encodeImageUrl)
 }
 
 export const tiredPrompt = '哪天克火掉一定是在这个群里面...'
@@ -131,8 +135,10 @@ const needsInsecureTls = (url: string) => {
 }
 
 export const queryMedicine = async (keyword: string): Promise<LightResult> => {
-  // R query.js doctor 允许空关键词（`#医药查询` 原样请求全部）。
-  const url = Config.light.medicineApi.replace('{keyword}', encodeURIComponent(keyword.trim()))
+  const query = keyword.trim()
+  // dayi 对空关键词返回 999997 搜索词不能为空; 裸命令直接给用法, 不浪费一次请求.
+  if (!query) return { type: 'text', title: '医药查询', text: '请提供关键词，例如：#医药查询 感冒' }
+  const url = Config.light.medicineApi.replace('{keyword}', encodeURIComponent(query))
   const payload = await fetchJson<unknown>(url, needsInsecureTls(url) ? { insecure: true } : {})
   const list = asRecord(payload).list
   if (Array.isArray(list) && list.length > 0) {

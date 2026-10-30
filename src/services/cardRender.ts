@@ -1484,12 +1484,16 @@ export const writeCardHtmlFile = (html: string, name: string) => {
 /**
  * 相同 HTML(+宽度) 直接复用上次截图, 参考 R apps/help.js:31-42 的 md5 缓存.
  * 截图成本高且状态卡/帮助卡在短时间内高度重复; 限制条数避免常驻内存膨胀.
+ * 一次性卡片(点歌列表/解析预览)的 HTML 每次不同, 首次渲染不入缓存, 第二次遇到同一 key
+ * 才说明会被复用 (评审 I3), 避免 64 个 LRU 槽被一次性卡片挤满.
  */
 const cardImageCache = new Map<string, ImageElement[]>()
+const pendingCardImageKeys = new Set<string>()
 const cardImageCacheLimit = 64
 
 export const clearCardRenderCache = () => {
   cardImageCache.clear()
+  pendingCardImageKeys.clear()
 }
 
 const readCardImageCache = (key: string) => {
@@ -1544,7 +1548,9 @@ export const renderCardImage = async ({
     }
   })
   const images = (Array.isArray(result) ? result : [result]).map(image => segment.image(`base64://${image}`))
-  writeCardImageCache(cacheKey, images)
+  // 第二次出现同一 HTML 才入缓存: 说明这张卡会被复用 (见 pendingCardImageKeys 说明).
+  if (pendingCardImageKeys.delete(cacheKey)) writeCardImageCache(cacheKey, images)
+  else pendingCardImageKeys.add(cacheKey)
   logger.debug(`[${Root.pluginName}] Render card ${name}: ${file}, images=${images.length}`)
   return images
 }

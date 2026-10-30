@@ -200,17 +200,28 @@ const tryFfmpeg = async (options: Parameters<typeof runFfmpeg>[0]) => {
  * 发送时准备视频: 远程直链先下载(沿用 runtime 体积上限), 有独立音轨则合并,
  * 再按需做 QQ 兼容转封装; 本地视频保持原样, 不重复转码.
  */
+const audioTrackOrDefault = async (audioUrl: string | undefined, referer?: string) => {
+  if (!audioUrl) return undefined
+  if (!isRemoteMedia(audioUrl)) return audioUrl
+  try {
+    return await downloadResolverMedia(audioUrl, 'm4a', referer)
+  } catch (error) {
+    // 音轨失败不应丢掉已下载的视频: 跳过合并, 继续发视频本体 (R 同款降级).
+    logger.warn(`[hira] audio track download failed, sending video only: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  }
+}
+
 export const prepareResolverVideo = async (video: ResolverVideo, options?: { referer?: string }): Promise<string | undefined> => {
   const sourceUrl = video.url?.trim()
   if (!sourceUrl) return undefined
-  const audioUrl = video.audioUrl?.trim()
+  // HLS 播放列表必须先合并分片, 发送侧没有该能力, 绝不把 playlist 当媒体文件发送.
+  if (/\.m3u8(?:$|[?#])/i.test(sourceUrl)) throw new Error('暂不支持 HLS (m3u8) 直链，请点击原链接观看')
+  const audioFile = await audioTrackOrDefault(video.audioUrl?.trim(), options?.referer)
   const remote = isRemoteMedia(sourceUrl)
 
   if (!remote) {
-    if (!audioUrl) return sourceUrl
-    const audioFile = isRemoteMedia(audioUrl)
-      ? await downloadResolverMedia(audioUrl, 'm4a', options?.referer)
-      : audioUrl
+    if (!audioFile) return sourceUrl
     const merged = await tryFfmpeg({
       format: 'merge',
       videoInput: sourceUrl,
@@ -221,10 +232,7 @@ export const prepareResolverVideo = async (video: ResolverVideo, options?: { ref
   }
 
   let videoFile = await downloadResolverMedia(sourceUrl, videoExtension(sourceUrl), options?.referer)
-  if (audioUrl) {
-    const audioFile = isRemoteMedia(audioUrl)
-      ? await downloadResolverMedia(audioUrl, 'm4a', options?.referer)
-      : audioUrl
+  if (audioFile) {
     const merged = await tryFfmpeg({
       format: 'merge',
       videoInput: videoFile,

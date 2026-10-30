@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+
 import type { Message } from 'node-karin'
 import { segment } from 'node-karin'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -1074,6 +1076,66 @@ describe('replyResolvedPost', () => {
     const videoPayload = reply.mock.calls.at(-1)?.[0] as { type: string, file: string }
     expect(videoPayload.type).toBe('video')
     expect(videoPayload.file).toContain(lastFfmpeg.output.replace(/\\/g, '/'))
+  })
+
+  it('sends the video without merging when the audio track download fails', async () => {
+    const reply = vi.fn(async (_payload?: unknown) => ({}) as unknown)
+    const e = { reply } as unknown as Message
+    const originalDownload = runtimeMocks.downloadFile.getMockImplementation()
+    runtimeMocks.downloadFile.mockImplementation(async (options: { url: string, output: string }) => {
+      if (options.url.includes('audio.m4s')) throw new Error('audio CDN blocked')
+      fs.writeFileSync(options.output, Buffer.alloc(2048))
+      return options.output
+    })
+
+    const post: ResolvedPost = {
+      platform: 'bilibili',
+      displayName: '哔哩哔哩',
+      title: 'DASH 视频',
+      pageUrl: 'https://www.bilibili.com/video/BV1',
+      images: [],
+      videos: [{
+        url: 'https://cdn.example.test/video.m4s',
+        audioUrl: 'https://cdn.example.test/audio.m4s'
+      }]
+    }
+
+    try {
+      await replyResolvedPost(e, post)
+    } finally {
+      if (originalDownload) runtimeMocks.downloadFile.mockImplementation(originalDownload)
+    }
+
+    expect(runtimeMocks.runFfmpeg).not.toHaveBeenCalledWith(expect.objectContaining({ format: 'merge' }))
+    const videoCalls = (reply.mock.calls as unknown as Array<[unknown]>).filter(([payload]) => (
+      typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'video'
+    ))
+    expect(videoCalls).toHaveLength(1)
+    expect((reply.mock.calls as unknown as Array<[unknown]>).some(([payload]) => (
+      typeof payload === 'string' && payload.includes('视频下载失败')
+    ))).toBe(false)
+  })
+
+  it('reports HLS playlists instead of sending them as videos', async () => {
+    const reply = vi.fn(async (_payload?: unknown) => ({}) as unknown)
+    const e = { reply } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'general',
+      displayName: 'AcFun',
+      title: 'HLS',
+      pageUrl: 'https://www.acfun.cn/v/ac123',
+      images: [],
+      videos: [{ url: 'https://cdn.example.test/only.m3u8' }]
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(runtimeMocks.downloadFile).not.toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://cdn.example.test/only.m3u8'
+    }))
+    expect((reply.mock.calls as unknown as Array<[unknown]>).some(([payload]) => (
+      typeof payload === 'string' && payload.includes('暂不支持 HLS')
+    ))).toBe(true)
   })
 
   it('sends disjoint douyin clip and image sets without further dedupe', async () => {

@@ -1,3 +1,4 @@
+import { logger } from 'node-karin'
 import type { Message } from 'node-karin'
 
 import { isHiraAppEnabled } from '@/apps/runtime'
@@ -88,11 +89,18 @@ export const handleMusicCookieMessage = async (e: Message, next?: () => unknown)
   }
 
   if (command.type === 'submit') {
-    const result = await validateMusicCookie({
-      cookies: Config.music.cookies,
-      neteaseBaseUrl: Config.music.api.neteaseBaseUrl,
-      qqTempApi: Config.music.api.qqTempApi
-    }, command.source, command.cookie)
+    // 校验接口抖动/超时不应阻止落盘: 无法校验时按"已保存但未校验"处理.
+    let result: { checkable: boolean, ok: boolean, message?: string, vip?: boolean }
+    try {
+      result = await validateMusicCookie({
+        cookies: Config.music.cookies,
+        neteaseBaseUrl: Config.music.api.neteaseBaseUrl,
+        qqTempApi: Config.music.api.qqTempApi
+      }, command.source, command.cookie)
+    } catch (error) {
+      result = { checkable: false, ok: true }
+      logger.warn(`[hira] music cookie validation failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
 
     if (result.checkable && !result.ok) {
       await replyText(e, `${sourceName(command.source)} ck 不正确或已失效，请重新获取！`)

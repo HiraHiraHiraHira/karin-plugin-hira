@@ -122,6 +122,17 @@ describe('music cookie controller', () => {
     expect(e.reply).not.toHaveBeenCalled()
   })
 
+  it('saves the cookie even when the validation API throws', async () => {
+    statusMocks.validateMusicCookie.mockRejectedValueOnce(new Error('ETIMEDOUT'))
+    const e = eventOf('#提交音乐ckMUSIC_U=abc')
+
+    await handleMusicCookieMessage(e)
+
+    expect(configMocks.updateMusicCookie).toHaveBeenCalledWith('netease', 'MUSIC_U=abc')
+    expect(String(e.reply.mock.calls[0]?.[0])).toContain('已更新')
+    expect(String(e.reply.mock.calls[0]?.[0])).not.toContain('不正确')
+  })
+
   it('replies with usage help when the submit command has no cookie', async () => {
     const e = eventOf('#提交音乐ck')
 

@@ -432,7 +432,7 @@ describe('cardRender', () => {
     expect(result).toEqual([{ type: 'image', file: `base64://${Buffer.from('image-bytes').toString('base64')}` }])
   })
 
-  it('reuses screenshots for identical html and width', async () => {
+  it('reuses screenshots for identical html and width after the second render', async () => {
     clearCardRenderCache()
     const render = vi.fn(async () => Buffer.from('cached-card').toString('base64'))
     const writeHtml = vi.fn(() => 'D:\\tmp\\cached-card.html')
@@ -440,11 +440,24 @@ describe('cardRender', () => {
 
     const first = await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
     const second = await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
+    const third = await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
 
-    expect(render).toHaveBeenCalledTimes(1)
-    expect(writeHtml).toHaveBeenCalledTimes(1)
+    // 首次不入缓存(一次性卡片防污染), 第二次入缓存, 第三次命中.
+    expect(render).toHaveBeenCalledTimes(2)
+    expect(third).toEqual(second)
     expect(second).toEqual(first)
-    expect(second[0]?.file).toBe(`base64://${Buffer.from('cached-card').toString('base64')}`)
+    expect(third[0]?.file).toBe(`base64://${Buffer.from('cached-card').toString('base64')}`)
+  })
+
+  it('does not cache one-off cards that are never rendered twice', async () => {
+    clearCardRenderCache()
+    const render = vi.fn(async () => Buffer.from('oneoff-card').toString('base64'))
+    const writeHtml = vi.fn(() => 'D:\\tmp\\oneoff-card.html')
+
+    await renderCardImage({ name: 'resolver-preview', html: '<main id="container">a</main>', width: 920, writeHtml, render })
+    await renderCardImage({ name: 'resolver-preview', html: '<main id="container">b</main>', width: 920, writeHtml, render })
+
+    expect(render).toHaveBeenCalledTimes(2)
   })
 
   it('keeps cache entries separate for different widths', async () => {
