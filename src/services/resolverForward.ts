@@ -3,6 +3,7 @@ import { segment } from 'node-karin'
 
 import { dedupeImageUrls, dedupeRichContentBlocks, type ImageDedupeOptions } from '@/resolvers/media'
 import type { ResolvedPost, ResolverPlatform, RichCommentBlock, RichContentBlock } from '@/resolvers/types'
+import { sendWithMediaRetry } from '@/services/mediaRetry'
 
 export type ResolverForwardCopy = {
   contentPrompt: string
@@ -48,7 +49,14 @@ export const resolveEventForwardIdentity = (e: Message, fallbackName: string): F
   }
 }
 
-export const canSendResolverForward = (e: Message) => typeof (e.bot as unknown as { sendForwardMsg?: unknown }).sendForwardMsg === 'function'
+/**
+ * 合并转发可用性探测: 适配器必须实现 sendForwardMsg, 且当前事件必须带得动 contact.
+ * 真正的发送失败仍由调用方 catch 兜底为直发, 这里只挡掉必然失败的情况.
+ */
+export const canSendResolverForward = (e: Message) => {
+  if (!e.contact) return false
+  return typeof (e.bot as unknown as { sendForwardMsg?: unknown } | undefined)?.sendForwardMsg === 'function'
+}
 
 export const buildFakeForwardNode = (message: SendElement[], userId: string, nickname: string): CustomNodeElement => ({
   type: 'node',
@@ -72,15 +80,21 @@ export const formatResolverCommentBlock = (comment: RichCommentBlock) => {
   const meta = [
     typeof comment.floor === 'number' ? `${comment.floor}楼` : undefined,
     comment.location,
-    comment.time
+    comment.time,
+    typeof comment.likeCount === 'number' && comment.likeCount > 0 ? `👍 ${comment.likeCount}` : undefined,
+    typeof comment.replyCount === 'number' && comment.replyCount > 0 ? `💬 ${comment.replyCount}` : undefined
   ].filter(Boolean).join(' · ')
   return [header, meta, '', comment.text].filter((line, index) => line || index === 2).join('\n')
 }
 
-export const buildResolverCommentNodes = (comments: RichCommentBlock[]) => comments.map(comment => buildFakeForwardNode([
+/**
+ * 评论节点用触发者的 id 承载转发身份(避免出现灰头像), 昵称仍显示评论作者;
+ * 作者信息已同时写在正文首行, 不会丢失.
+ */
+export const buildResolverCommentNodes = (comments: RichCommentBlock[], identity?: ForwardIdentity) => comments.map(comment => buildFakeForwardNode([
   segment.text(formatResolverCommentBlock(comment)),
   ...dedupeImageUrls(comment.images).map(url => segment.image(url))
-], '1', comment.author))
+], identity?.id || '', comment.author))
 
 export const sendResolverForward = async (
   e: Message,
@@ -89,10 +103,13 @@ export const sendResolverForward = async (
   prompt: string,
   summary: string
 ) => {
-  await e.bot.sendForwardMsg(e.contact, nodes, {
-    source: post.displayName,
-    summary,
-    prompt,
-    news: [{ text: '点击查看完整内容' }]
-  })
+  await sendWithMediaRetry(
+    payload => e.bot.sendForwardMsg(e.contact, payload, {
+      source: post.displayName,
+      summary,
+      prompt,
+      news: [{ text: '点击查看完整内容' }]
+    }),
+    nodes
+  )
 }

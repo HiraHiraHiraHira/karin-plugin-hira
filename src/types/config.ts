@@ -166,6 +166,7 @@ export type AiConfig = {
   apiKey: string
   model: string
   maxInputChars: number
+  autoSummaryDomains: string[]
 }
 
 export type HiraConfig = {

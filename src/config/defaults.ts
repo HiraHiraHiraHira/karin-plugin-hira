@@ -103,7 +103,7 @@ export const defaultConfig: HiraConfig = {
     },
     bilibili: {
       maxVideoDurationSeconds: 480,
-      quality: 64,
+      quality: 112,
       codec: 'auto'
     },
     douyin: {
@@ -143,10 +143,11 @@ export const defaultConfig: HiraConfig = {
       'https://api.thecatapi.com/v1/images/search?limit=1'
     ],
     buyerShowApis: [
-      'https://api.vvhan.com/api/tao'
+      'https://api.suyanw.cn/api/tbmjx.php?return=json'
     ],
     tiredApis: [
-      'https://api.vvhan.com/api/wallpaper/views'
+      'https://imgapi.cn/cos2.php?return=jsonpro',
+      'https://imgapi.cn/cos.php?return=jsonpro'
     ],
     medicineApi: 'https://server.dayi.org.cn/api/search?keyword={keyword}&pageNo=1&pageSize=10',
     softwareApi: ''
@@ -154,7 +155,7 @@ export const defaultConfig: HiraConfig = {
   translate: {
     enabled: true,
     deeplxApi: '',
-    tencentApi: 'https://api.interpreter.caiyunai.com/v1/translator',
+    tencentApi: 'https://transmart.qq.com/api/imt',
     timeoutSeconds: 15
   },
   ai: {
@@ -162,6 +163,15 @@ export const defaultConfig: HiraConfig = {
     apiBaseUrl: 'https://api.openai.com/v1',
     apiKey: '',
     model: 'gpt-4.1-mini',
-    maxInputChars: 12000
+    maxInputChars: 50000,
+    autoSummaryDomains: [
+      'mp.weixin.qq.com',
+      'arxiv.org',
+      'sspai.com',
+      'chinadaily.com.cn',
+      'zhihu.com',
+      'github.com',
+      'v2ex.com'
+    ]
   }
 }

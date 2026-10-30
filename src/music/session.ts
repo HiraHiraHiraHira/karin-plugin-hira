@@ -16,9 +16,8 @@ type Session = {
   /** items[0] 对应的全局序号(1-based);翻页追加后保持跨页连续 */
   startIndex: number
   lastSelected?: MusicItem
-  contact?: Message['contact']
-  selfId?: string
-  listMessageId?: string
+  /** 已发出、待撤回的列表消息(翻页会累加, 换歌/过期时整批撤回) */
+  listMessages: MusicSessionListTarget[]
 }
 
 type StoreOptions = {
@@ -27,7 +26,7 @@ type StoreOptions = {
   now?: () => number
   maxSessions?: number
   /** 会话过期被清理时触发(同步触发,内部自行处理异步撤回) */
-  onExpire?: (target: MusicSessionListTarget) => void
+  onExpire?: (targets: MusicSessionListTarget[]) => void
 }
 
 /** 内存中最多保留的会话数，超出后按 expiresAt 最旧淘汰，避免只增不减 */
@@ -37,7 +36,7 @@ export class MusicSessionStore {
   private readonly getTtlMs: () => number
   private readonly now: () => number
   private readonly maxSessions: number
-  private readonly onExpire?: (target: MusicSessionListTarget) => void
+  private readonly onExpire?: (targets: MusicSessionListTarget[]) => void
   private readonly sessions = new Map<string, Session>()
 
   constructor(options: StoreOptions) {
@@ -57,7 +56,8 @@ export class MusicSessionStore {
       items: [...items],
       meta,
       expiresAt: this.now() + Math.max(0, this.getTtlMs()),
-      startIndex: 1
+      startIndex: 1,
+      listMessages: []
     })
     this.evictOverflow()
   }
@@ -94,26 +94,21 @@ export class MusicSessionStore {
     return this.takeIfAlive(key)?.lastSelected
   }
 
-  /** 记录刚发出的列表消息,用于换歌/过期时撤回 */
-  setListMessage(key: string, target: MusicSessionListTarget) {
+  /** 记录刚发出的列表消息,用于换歌/过期时整批撤回(翻页会保留旧页的 id) */
+  addListMessage(key: string, target: MusicSessionListTarget) {
     const session = this.takeIfAlive(key)
     if (!session) return
-    session.contact = target.contact
-    session.selfId = target.selfId
-    session.listMessageId = target.messageId
+    if (session.listMessages.some(item => item.messageId === target.messageId)) return
+    session.listMessages.push(target)
   }
 
-  /** 取出待撤回的列表消息并清空(同一条只撤一次) */
-  takeListMessage(key: string) {
+  /** 取出本会话所有待撤回的列表消息并清空(每条只撤一次) */
+  takeListMessages(key: string) {
     const session = this.takeIfAlive(key)
-    if (!session || !session.listMessageId || !session.contact || !session.selfId) return undefined
-    const target: MusicSessionListTarget = {
-      contact: session.contact,
-      selfId: session.selfId,
-      messageId: session.listMessageId
-    }
-    session.listMessageId = undefined
-    return target
+    if (!session || session.listMessages.length === 0) return []
+    const targets = session.listMessages
+    session.listMessages = []
+    return targets
   }
 
   /**
@@ -147,17 +142,13 @@ export class MusicSessionStore {
    */
   private expire(key: string, session: Session) {
     this.sessions.delete(key)
-    // 目标字段缺失时无法撤回,只能丢弃会话
-    if (!session.listMessageId || !session.contact || !session.selfId) return
-    const target: MusicSessionListTarget = {
-      contact: session.contact,
-      selfId: session.selfId,
-      messageId: session.listMessageId
-    }
+    // 没有列表消息时无需撤回,直接丢弃会话
+    if (session.listMessages.length === 0) return
     // 提前置空,即便回调抛错后同对象再次进入 expire 也不会重复撤回
-    session.listMessageId = undefined
+    const targets = session.listMessages
+    session.listMessages = []
     try {
-      this.onExpire?.(target)
+      this.onExpire?.(targets)
     } catch {
       // 忽略过期回调异常,会话清理本身不受影响
     }

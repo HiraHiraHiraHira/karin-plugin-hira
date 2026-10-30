@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildMusicCookieStatusLines, normalizeQQCookieStatus } from '@/music/cookieStatus'
+import { buildMusicCookieStatusLines, normalizeQQCookieStatus, validateMusicCookie } from '@/music/cookieStatus'
 
 describe('normalizeQQCookieStatus', () => {
   it('reports logged-in QQ profile without leaking numeric account ids', () => {
@@ -16,6 +16,14 @@ describe('normalizeQQCookieStatus', () => {
     })).toEqual({
       ok: true,
       message: 'Hira'
+    })
+  })
+
+  it('reports VIP state when the platform returns it', () => {
+    expect(normalizeQQCookieStatus({ code: 0, data: { creator: { nick: 'Hira' } } }, true)).toEqual({
+      ok: true,
+      message: 'Hira',
+      vip: true
     })
   })
 
@@ -49,5 +57,23 @@ describe('buildMusicCookieStatusLines', () => {
       '酷狗：已配置',
       '哔哩哔哩：已配置'
     ])
+  })
+
+  it('appends VIP state to checked platforms without changing failures', async () => {
+    const lines = await buildMusicCookieStatusLines({
+      cookies: { netease: 'MUSIC_U=secret', qq: 'uin=1; qm_keyst=secret', kuwo: '', kugou: '', bilibili: '' },
+      checkNetease: async () => ({ ok: true, message: '网易用户', vip: true }),
+      checkQQ: async () => ({ ok: false, message: 'Cookie 失效或未登录' })
+    })
+
+    expect(lines[1]).toBe('网易云：在线（网易用户，VIP）')
+    expect(lines[2]).toBe('QQ音乐：失效（Cookie 失效或未登录）')
+  })
+
+  it('only validates netease/qq cookies, saving other sources as-is', async () => {
+    await expect(validateMusicCookie({ cookies: {} as never }, 'kuwo', 'kw_token=x')).resolves.toEqual({
+      checkable: false,
+      ok: true
+    })
   })
 })

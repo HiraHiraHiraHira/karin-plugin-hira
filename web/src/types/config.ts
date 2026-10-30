@@ -105,5 +105,6 @@ export type ConfigType = {
     apiKey: string
     model: string
     maxInputChars: number
+    autoSummaryDomains: string[]
   }
 }

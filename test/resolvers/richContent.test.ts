@@ -25,7 +25,7 @@ describe('toRichResolvedPost', () => {
         'https://img.example.test/a.jpg?imageView2/2/w/240',
         'https://img.example.test/b.jpg'
       ],
-      videos: ['https://video.example.test/a.mp4', 'https://video.example.test/b.mp4'],
+      videos: [{ url: 'https://video.example.test/a.mp4' }, { url: 'https://video.example.test/b.mp4' }],
       extras: {
         coverUrl: 'https://img.example.test/a.jpg?imageView2/2/w/240',
         authorAvatar: 'https://img.example.test/avatar.jpg',

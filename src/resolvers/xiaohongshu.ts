@@ -127,7 +127,7 @@ export const normalizeXiaohongshuNote = (pageUrl: string, payload: unknown): Res
     description,
     author: note.user?.nickname,
     pageUrl,
-    videos,
+    videos: videos.map(url => ({ url })),
     images,
     extras: {
       coverUrl: images[0],

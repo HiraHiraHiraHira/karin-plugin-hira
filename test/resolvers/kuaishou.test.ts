@@ -50,7 +50,7 @@ describe('kuaishou resolver helpers', () => {
       description: '快手正文',
       author: '作者',
       pageUrl: 'https://www.kuaishou.com/short-video/3xabc',
-      videos: ['https://cdn.example.test/video.mp4'],
+      videos: [{ url: 'https://cdn.example.test/video.mp4' }],
       images: ['https://img.example.test/cover.jpg'],
       extras: {
         coverUrl: 'https://img.example.test/cover.jpg',

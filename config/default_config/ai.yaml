@@ -11,4 +11,14 @@ apiKey: ""
 model: "gpt-4.1-mini"
 
 # 发送给模型的网页正文最大长度
-maxInputChars: 12000
+maxInputChars: 50000
+
+# 自动总结域名；消息中出现这些域名的链接时自动总结（需开启 summaryEnabled）
+autoSummaryDomains:
+  - "mp.weixin.qq.com"
+  - "arxiv.org"
+  - "sspai.com"
+  - "chinadaily.com.cn"
+  - "zhihu.com"
+  - "github.com"
+  - "v2ex.com"

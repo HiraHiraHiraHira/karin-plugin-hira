@@ -52,10 +52,21 @@ describe('matchResolver', () => {
 
   it('matches subdomains without matching look-alike hosts', () => {
     expect(matchResolver('https://live.bilibili.com/123')?.platform).toBe('bilibili')
+    expect(matchResolver('https://live.douyin.com/123456')?.platform).toBe('douyin')
+    expect(matchResolver('https://webcast.amemv.com/douyin/webcast/reflow/7654321')?.platform).toBe('douyin')
     expect(matchResolver('https://api.xiaoheihe.cn/bbs/app/api/web/share?link_id=1')?.platform).toBe('xiaoheihe')
     // 后缀判定必须带点，否则 evilbilibili.com 会被误当成哔哩哔哩。
     expect(matchResolver('https://evilbilibili.com/video/BV14A31eZEH8')).toBeUndefined()
     expect(matchResolver('https://b23.tv.evil.com/abc')).toBeUndefined()
+  })
+
+  it('routes non-video Bilibili links to the bilibili resolver', () => {
+    expect(matchResolver('https://www.bilibili.com/bangumi/play/ep123')?.platform).toBe('bilibili')
+    expect(matchResolver('https://www.bilibili.com/bangumi/play/ss456')?.platform).toBe('bilibili')
+    expect(matchResolver('https://www.bilibili.com/read/cv789')?.platform).toBe('bilibili')
+    expect(matchResolver('https://t.bilibili.com/998877')?.platform).toBe('bilibili')
+    expect(matchResolver('https://www.bilibili.com/opus/998877')?.platform).toBe('bilibili')
+    expect(matchResolver('https://www.bilibili.com/video/av170001')?.platform).toBe('bilibili')
   })
 
   it('requires a /p/<id> path before treating tieba as a post', () => {

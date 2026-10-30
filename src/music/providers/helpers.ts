@@ -41,3 +41,9 @@ export const isPlayableAudioUrl = async (url: string | undefined): Promise<boole
     return false
   }
 }
+
+/** 统一 provider 报错文案: 源名 + 原因, 避免把底层英文错误直接甩给用户. */
+export const providerError = (label: string, reason: unknown) => {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  return new Error(message.startsWith(`${label}：`) ? message : `${label}：${message}`)
+}

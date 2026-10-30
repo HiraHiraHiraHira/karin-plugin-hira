@@ -14,6 +14,12 @@ export type ResolverMatch = {
   url: string
 }
 
+/** 视频来源: url 为视频流直链(远程或本地路径); audioUrl 为需合并的独立音频流(如 B 站 DASH 音轨 / 抖音动图 BGM), 合并由发送侧负责. */
+export type ResolverVideo = {
+  url: string
+  audioUrl?: string
+}
+
 export type ResolvedPost = {
   platform: ResolverPlatform
   displayName: string
@@ -21,7 +27,7 @@ export type ResolvedPost = {
   description?: string
   author?: string
   pageUrl?: string
-  videos: string[]
+  videos: ResolverVideo[]
   images: string[]
   extras?: ResolverExtras
 }
@@ -38,6 +44,8 @@ export type RichCommentBlock = {
   time?: string
   text: string
   images: string[]
+  likeCount?: number
+  replyCount?: number
 }
 
 export type ResolverExtras = {

@@ -32,7 +32,7 @@ const bilibiliCodecs = ['auto', 'av1', 'hevc', 'avc']
 const douyinQualities = ['adapt', '540p', '720p', '1080p', '2k', '4k']
 const musicSources = ['netease', 'qq', 'kuwo', 'kugou', 'bilibili']
 
-const urlPaths: Array<{ path: string, allowEmpty?: boolean, allowCredentials?: boolean }> = [
+const urlPaths: Array<{ path: string, allowEmpty?: boolean, allowCredentials?: boolean, commaSeparated?: boolean }> = [
   { path: 'music.api.neteaseBaseUrl' },
   { path: 'music.api.qqTempApi' },
   { path: 'music.api.aggregatorUrl' },
@@ -44,7 +44,7 @@ const urlPaths: Array<{ path: string, allowEmpty?: boolean, allowCredentials?: b
   { path: 'light.tiredApis', allowEmpty: true },
   { path: 'light.medicineApi' },
   { path: 'light.softwareApi', allowEmpty: true },
-  { path: 'translate.deeplxApi', allowEmpty: true },
+  { path: 'translate.deeplxApi', allowEmpty: true, commaSeparated: true },
   { path: 'translate.tencentApi' },
   { path: 'ai.apiBaseUrl' }
 ]
@@ -150,12 +150,16 @@ const validateHttpUrl = (value: unknown, label: string, allowEmpty: boolean, all
   return undefined
 }
 
-const validateUrlPath = (config: HiraConfig, rule: { path: string, allowEmpty?: boolean, allowCredentials?: boolean }) => {
+const validateUrlPath = (config: HiraConfig, rule: { path: string, allowEmpty?: boolean, allowCredentials?: boolean, commaSeparated?: boolean }) => {
   const value = getPathValue(config, rule.path)
+  const check = (item: unknown, label: string) => validateHttpUrl(item, label, Boolean(rule.allowEmpty), Boolean(rule.allowCredentials))
   if (Array.isArray(value)) {
-    return value.map((item, index) => validateHttpUrl(item, `${rule.path}[${index}]`, Boolean(rule.allowEmpty), Boolean(rule.allowCredentials)))
+    return value.map((item, index) => check(item, `${rule.path}[${index}]`))
   }
-  return [validateHttpUrl(value, rule.path, Boolean(rule.allowEmpty), Boolean(rule.allowCredentials))]
+  if (rule.commaSeparated && typeof value === 'string' && value.includes(',')) {
+    return value.split(',').map((item, index) => check(item, `${rule.path}[${index}]`))
+  }
+  return [check(value, rule.path)]
 }
 
 export const validateHiraConfig = (config: HiraConfig): string[] => {

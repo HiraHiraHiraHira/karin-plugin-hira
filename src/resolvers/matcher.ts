@@ -7,7 +7,7 @@ import { hostnameOf } from './url'
  */
 export const PLATFORM_DOMAINS: Record<ResolverPlatform, readonly string[]> = {
   bilibili: ['bilibili.com', 'b23.tv', 'bili2233.cn'],
-  douyin: ['douyin.com', 'iesdouyin.com'],
+  douyin: ['douyin.com', 'iesdouyin.com', 'webcast.amemv.com'],
   kuaishou: ['kuaishou.com', 'chenzhongtech.com'],
   xiaohongshu: ['xiaohongshu.com', 'xhslink.com', 'xhslink.cn'],
   weibo: ['weibo.com', 'weibo.cn'],

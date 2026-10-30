@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { Config } from '@/config'
 import { formatArtists } from '@/music/providers/helpers'
+import { encodeSilkFile } from '@/music/silk'
 import type { MusicPlayable } from '@/music/types'
 import { downloadFile } from '@/runtime/downloader'
 import { runFfmpeg } from '@/runtime/ffmpeg'
@@ -10,9 +11,13 @@ import { ensureTempDir, getTempRoot } from '@/runtime/temp'
 
 export const buildVoiceTempPaths = (root = getTempRoot()) => {
   const dir = ensureTempDir(root, 'music-voice')
+  const base = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return {
-    source: path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2)}.audio`),
-    output: path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2)}.ogg`)
+    source: path.join(dir, `${base()}.audio`),
+    wav: path.join(dir, `${base()}.wav`),
+    silk: path.join(dir, `${base()}.silk`),
+    /** silk 不可用时的 opus 兜底产物 */
+    output: path.join(dir, `${base()}.ogg`)
   }
 }
 
@@ -29,6 +34,11 @@ export const pcqqVoiceWarning = (playable: MusicPlayable) =>
 
 export const isAmrAudioUrl = (url: string) => /\.amr(?:[?#]|$)/i.test(url)
 
+/**
+ * 普通语音: 下载 → WAV(24k 单声道) → SILK.
+ * SILK 是 QQ 语音端原生格式, 发送后是真语音条(等价云崽 uploadRecord 的转码路径).
+ * silk-wasm 不可用时退回 opus ogg, 保证至少能发出语音.
+ */
 export const transcodePlayableToVoice = async (playable: MusicPlayable, options: { highQuality?: boolean } = {}) => {
   const paths = buildVoiceTempPaths()
   try {
@@ -37,16 +47,26 @@ export const transcodePlayableToVoice = async (playable: MusicPlayable, options:
       output: paths.source,
       maxBytes: Config.runtime.maxAudioFileSizeBytes
     })
-    await runFfmpeg({
-      input: paths.source,
-      output: paths.output,
-      format: 'voice',
-      highQuality: options.highQuality
-    })
-    return paths.output
+
+    try {
+      await runFfmpeg({
+        input: paths.source,
+        output: paths.wav,
+        format: 'wav'
+      })
+      return await encodeSilkFile(paths.wav, paths.silk)
+    } catch {
+      await runFfmpeg({
+        input: paths.source,
+        output: paths.output,
+        format: 'voice',
+        highQuality: options.highQuality
+      })
+      return paths.output
+    }
   } catch (error) {
     // 转码失败时不留下半成品音频
-    fs.rmSync(paths.output, { force: true })
+    for (const file of [paths.wav, paths.silk, paths.output]) fs.rmSync(file, { force: true })
     throw error
   } finally {
     // 无论成功失败都清掉中间源文件，避免每次语音点歌残留两个文件
@@ -56,15 +76,14 @@ export const transcodePlayableToVoice = async (playable: MusicPlayable, options:
 
 /**
  * 解析语音上行文件.
- * - 高清 (`highQuality`) 且音源本身是 amr: 返回 `undefined`, 由 `replyVoiceFileOrAudio`
- *   直传 `playable.audioUrl`. amr 是 QQ 语音端原生格式, 免去二次有损转码.
- * - 其余情况(含高清但非 amr, 例如网易云 lossless 直出的 mp3): 下载后转 opus ogg
- *   单声道 24k, `segment.record` 端可播; 转码失败时抛给调用方走直链兜底.
+ * - 高清 (`highQuality`): 返回 `undefined`, 由 `replyVoiceFileOrAudio` 直传原音质直链
+ *   (等价云崽 uploadRecord 的 `transcoding=false`); 直传失败由调用方降级到 SILK.
+ * - 普通语音: 转成 SILK 真语音条.
  *
- * 不变量: 只有 amr 可以免转码直传. 其它格式(尤其 mp3/flac)直传会在 QQ 语音端不可播,
- * 所以高清不能作为"跳过转码"的唯一条件.
+ * 不变量: 高清才允许直传原音质; 普通语音必须转码成语音端原生格式.
+ * 失败时抛给调用方走直链兜底.
  */
 export const resolveVoiceFile = async (playable: MusicPlayable, options?: { highQuality?: boolean }) => {
-  if (options?.highQuality && isAmrAudioUrl(playable.audioUrl)) return undefined
+  if (options?.highQuality) return undefined
   return transcodePlayableToVoice(playable, options)
 }

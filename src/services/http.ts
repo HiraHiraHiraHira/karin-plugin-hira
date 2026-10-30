@@ -13,6 +13,8 @@ export type FetchJsonOptions = {
   signal?: AbortSignal
   /** 跳过 TLS 证书校验（仅用于证书损坏的历史接口，如 dayi 医药源） */
   insecure?: boolean
+  /** 网络错误/5xx 重试的首次退避毫秒数, 默认 200; 便于测试设为 0 */
+  retryDelayMs?: number
 }
 
 const defaultRequestHeaders = {
@@ -121,7 +123,7 @@ const createAbortSignal = (timeoutMs: number, external?: AbortSignal) => {
   }
 }
 
-export const fetchResponse = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
+const fetchResponseOnce = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
   // insecure 只能走 axios（fetch 无法按请求关证书校验），而代理同样只能走 axios 的独立通道；
   // 两条分支互斥，静默择一会让调用方以为同时生效，所以显式报错。
   if (options.insecure && options.proxy?.trim()) {
@@ -180,6 +182,52 @@ export const fetchResponse = async (url: string, options: FetchJsonOptions = {})
     throw new Error(`响应超过 ${options.maxBytes} 字节限制`)
   }
   return response
+}
+
+const httpRetryAttempts = 3
+
+const retryableStatus = (status: number) => status >= 500
+
+// TS 的 ES2022 lib 未声明 Promise.withResolvers, 这里只能用执行器形式.
+const sleepWithBackoff = (baseDelay: number, attempt: number) => {
+  const ms = baseDelay * 2 ** attempt
+  if (ms <= 0) return Promise.resolve()
+  return new Promise<void>(resolve => setTimeout(resolve, ms))
+}
+
+/**
+ * fetch 只把网络层失败抛成 TypeError/AbortError, 其余(如体积超限、insecure+proxy 冲突)都是
+ * 确定性错误, 重试只会放大问题. axios 的失败带 code, 单独识别.
+ */
+const isRetryableNetworkError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false
+  const { code, name } = error as { code?: unknown, name?: unknown }
+  if (typeof code === 'string' && /^(?:ECONNRESET|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNABORTED|UND_ERR_)/.test(code)) return true
+  // fetchResponseOnce 会把底层错误包装成中文文案，重试判断要能识别这两种包装
+  if (error instanceof Error && /^(?:网络请求失败：|请求超时（)/.test(error.message)) return true
+  return name === 'TypeError' || name === 'AbortError' || name === 'FetchError'
+}
+
+/**
+ * 网络错误和 5xx 做 3 次指数退避重试; 4xx/业务体超限等确定性失败立即抛出.
+ */
+export const fetchResponse = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
+  const delay = Math.max(0, options.retryDelayMs ?? 200)
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetchResponseOnce(url, options)
+      if (!retryableStatus(response.status) || attempt >= httpRetryAttempts - 1) return response
+      try {
+        await response.body?.cancel()
+      } catch {
+        // 丢弃本次响应体失败不影响重试
+      }
+    } catch (error) {
+      // 调用方主动取消时不重试; 内部超时(AbortError)按网络错误处理.
+      if (options.signal?.aborted || !isRetryableNetworkError(error) || attempt >= httpRetryAttempts - 1) throw error
+    }
+    await sleepWithBackoff(delay, attempt)
+  }
 }
 
 export const readResponseBytes = async (response: Response, maxBytes?: number) => {

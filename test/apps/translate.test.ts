@@ -1,7 +1,7 @@
 import type { Message } from 'node-karin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { extractQuotedText, translateHandler, translateReg, translateTargetOnlyReg } from '@/apps/translate'
+import { extractQuotedText, translateHandler, translateReg } from '@/apps/translate'
 
 // 翻译服务会打真实网络，这里只保留 handler 的接线行为。
 const translateServiceMocks = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ type QuotedFixtureOptions = {
 
 /** 伪造消息事件：contact 与元素都对齐 karin 的真实结构，便于断言 getMsg 入参。 */
 const quotedFixture = (options: QuotedFixtureOptions) => {
-  const reply = vi.fn(async (_payload?: unknown) => ({}))
+  const reply = vi.fn(async (_payload?: unknown, _options?: unknown) => ({}))
   const getMsg = vi.fn(options.getMsg)
   const contact = { scene: 'group', peer: '10001' }
   const e = {
@@ -73,14 +73,13 @@ describe('extractQuotedText', () => {
 })
 
 describe('translate command patterns', () => {
-  it('accepts the trans alias with body and keeps bare targets out', () => {
+  it('accepts translate commands with or without a space after the target', () => {
     expect(translateReg.test('transen hello')).toBe(true)
+    expect(translateReg.test('trans中 hello')).toBe(true)
+    expect(translateReg.test('翻中hello')).toBe(true)
     expect(translateReg.test('翻英文 hello')).toBe(true)
     expect(translateReg.test('#trans英 你好')).toBe(true)
-    expect(translateReg.test('翻英文')).toBe(false)
-    expect(translateReg.test('transen')).toBe(false)
-    expect(translateTargetOnlyReg.test('trans日')).toBe(true)
-    expect(translateTargetOnlyReg.test('#翻英')).toBe(true)
+    expect(translateReg.test('今天天气')).toBe(false)
   })
 })
 
@@ -99,7 +98,9 @@ describe('translateHandler', () => {
 
     expect(translateServiceMocks.translateText).toHaveBeenCalledWith('你好', 'en')
     expect(getMsg).not.toHaveBeenCalled()
-    expect(String(reply.mock.calls[0]?.[0])).toContain('en:你好')
+    // 译文直接引用回复，不带 `Hira：` 前缀
+    expect(reply.mock.calls[0]?.[0]).toBe('en:你好')
+    expect(reply.mock.calls[0]?.[1]).toEqual({ reply: true })
   })
 
   it('translates prefixed target-only commands with a quoted body', async () => {
@@ -125,5 +126,17 @@ describe('translateHandler', () => {
 
     expect(translateServiceMocks.translateText).not.toHaveBeenCalled()
     expect(String(reply.mock.calls[0]?.[0])).toContain('请附上要翻译的文本')
+  })
+
+  it('translates commands without a space after the target language', async () => {
+    const { e, reply } = quotedFixture({
+      msg: '翻中hello',
+      getMsg: async () => ({ elements: [] })
+    })
+
+    await expect(translateHandler(e)).resolves.toBe(true)
+
+    expect(translateServiceMocks.translateText).toHaveBeenCalledWith('hello', 'zh')
+    expect(reply.mock.calls[0]?.[0]).toBe('zh:hello')
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { BilibiliMusicProvider, defaultBilibiliAppKey, selectBilibiliAudio, toPlayableBilibiliUrl } from '@/music/providers/bilibili'
+import { BilibiliMusicProvider, defaultBilibiliAppKey, normalizeBilibiliAudioUrl, selectBilibiliAudio, toPlayableBilibiliUrl } from '@/music/providers/bilibili'
 import type { fetchJson } from '@/services/http'
 
 describe('toPlayableBilibiliUrl（对齐小飞的镜像改写）', () => {
@@ -37,8 +37,25 @@ describe('selectBilibiliAudio', () => {
     })
   })
 
-  it('returns undefined when no audio stream exists', () => {
+  it('falls back to durl when dash audio is missing and rewrites IP hosts to the upos mirror', () => {
+    expect(selectBilibiliAudio({
+      data: {
+        dash: { audio: [] },
+        durl: [{ url: 'http://10.1.2.3/video.m4s?token=1' }]
+      }
+    })).toEqual({
+      id: 0,
+      url: 'https://upos-sz-mirrorhw.bilivideo.com/video.m4s?token=1'
+    })
+  })
+
+  it('returns undefined when neither dash nor durl streams exist', () => {
     expect(selectBilibiliAudio({ data: { dash: { audio: [] } } })).toBeUndefined()
+  })
+
+  it('rewrites only bare IP hosts', () => {
+    expect(normalizeBilibiliAudioUrl('https://upos.example.test/a.m4s')).toBe('https://upos.example.test/a.m4s')
+    expect(normalizeBilibiliAudioUrl('http://127.0.0.1/a.m4s')).toBe('https://upos-sz-mirrorhw.bilivideo.com/a.m4s')
   })
 })
 

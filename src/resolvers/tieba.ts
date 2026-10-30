@@ -127,6 +127,26 @@ const forumName = (root: Record<string, any>, top?: Record<string, any>) => firs
   top?.forum_name
 )
 
+/** 贴吧接口没有统一的点赞/回复字段名，按已知别名逐个探测；缺失就不填，避免渲染成 0。 */
+const postLikeCount = (post: Record<string, any> | undefined) => firstNumber(
+  post?.like_count,
+  post?.likeCount,
+  post?.agree,
+  post?.agree_num,
+  post?.up,
+  post?.digg_count
+)
+
+const postReplyCount = (post: Record<string, any> | undefined) => firstNumber(
+  post?.reply_count,
+  post?.replyCount,
+  post?.reply_num,
+  post?.comment_count
+)
+
+/** R 插件把楼主以外的楼层全部发出；这里保留上限 30 层防止长贴刷屏。 */
+const MAX_TIEBA_FLOORS = 30
+
 const postImages = (post: Record<string, any> | undefined) => {
   const images: string[] = []
   if (!post) return images
@@ -178,20 +198,24 @@ export const normalizeTiebaPost = (url: string, payload: unknown): ResolvedPost 
     ...posts.flatMap(post => postImages(post))
   ].filter(Boolean)
 
-  const comments = posts.slice(0, 5).map(post => {
+  const floors = posts.slice(0, MAX_TIEBA_FLOORS)
+  // 摘要只列前 10 层，完整楼层由 commentBlocks 交给发送侧逐条转发（R 插件同样不把楼层写进正文）。
+  const comments = floors.slice(0, 10).map(post => {
     const author = postAuthorName(post)
     const text = stripHtml(post.content || '')
     return text ? `${author}：${text}` : ''
   }).filter(Boolean)
   const contentBlocks = dedupeContentBlocks(appendImageBlocks(htmlContentBlocks(thread.content || ''), thread.images ?? []))
-  const commentBlocks: RichCommentBlock[] = posts.slice(0, 5).map(post => ({
+  const commentBlocks: RichCommentBlock[] = floors.map(post => ({
     author: postAuthorName(post),
     replyTo: postReplyTo(post),
     floor: postFloor(post),
     location: postLocation(post),
     time: postTime(post),
     text: stripHtml(post.content || ''),
-    images: postImages(post)
+    images: postImages(post),
+    likeCount: postLikeCount(post),
+    replyCount: postReplyCount(post)
   })).filter(comment => comment.text || comment.images.length > 0)
   const dedupedImages = [...new Set(images)]
   const tag = forumName(rootObject, threadObject)
@@ -262,16 +286,20 @@ export const normalizeHibiTiebaPost = (url: string, payload: unknown): ResolvedP
   }
 
   const topText = normalizeContent(top.content)
-  const comments = posts.slice(1, 6).map(post => normalizeContent(post.content)).filter(Boolean)
+  const floors = posts.slice(1, MAX_TIEBA_FLOORS + 1)
+  // 摘要只列前 10 层，完整楼层由 commentBlocks 交给发送侧逐条转发。
+  const comments = floors.slice(0, 10).map(post => normalizeContent(post.content)).filter(Boolean)
   const contentBlocks = normalizeBlocks(top.content)
-  const commentBlocks: RichCommentBlock[] = posts.slice(1, 6).map(post => ({
+  const commentBlocks: RichCommentBlock[] = floors.map(post => ({
     author: postAuthorName(post as Record<string, any>),
     replyTo: postReplyTo(post as Record<string, any>),
     floor: postFloor(post as Record<string, any>),
     location: postLocation(post as Record<string, any>),
     time: postTime(post as Record<string, any>),
     text: (post.content ?? []).map(item => item.text).filter(Boolean).join('\n'),
-    images: hibiPostImages(post as Record<string, any>)
+    images: hibiPostImages(post as Record<string, any>),
+    likeCount: postLikeCount(post as Record<string, any>),
+    replyCount: postReplyCount(post as Record<string, any>)
   })).filter(comment => comment.text || comment.images.length > 0)
   const tag = forumName(rootObject, top as Record<string, any>)
 
@@ -285,7 +313,7 @@ export const normalizeHibiTiebaPost = (url: string, payload: unknown): ResolvedP
       comments.length > 0 ? `热门回复\n${comments.join('\n')}` : ''
     ].filter(Boolean).join('\n\n'),
     pageUrl: url,
-    videos,
+    videos: videos.map(url => ({ url })),
     images,
     extras: {
       coverUrl: images[0],

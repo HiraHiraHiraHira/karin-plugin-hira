@@ -1,11 +1,11 @@
 # 翻译功能总开关
 enabled: true
 
-# DeepLX API，留空则跳过
+# DeepLX API，留空则跳过；支持逗号分隔多个镜像，每次随机选取
 deeplxApi: ""
 
-# 腾讯交互翻译兼容接口
-tencentApi: "https://api.interpreter.caiyunai.com/v1/translator"
+# 腾讯交互翻译兼容接口（匿名可用）
+tencentApi: "https://transmart.qq.com/api/imt"
 
 # 请求超时时间，单位秒
 timeoutSeconds: 15

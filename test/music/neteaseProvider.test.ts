@@ -97,6 +97,29 @@ describe('Netease provider helpers', () => {
     })
   })
 
+  it('returns both original and translated lyrics as separate blocks', async () => {
+    const provider = new NeteaseProvider({
+      baseUrl: 'https://api.example.test',
+      fetchJson: async <T = unknown>() => ({
+        lrc: { lyric: '[00:00]第一句' },
+        tlyric: { lyric: '[00:00]first line' }
+      }) as T
+    })
+
+    await expect(provider.getLyrics({ id: '1', source: 'netease', title: 't', artists: [], pageUrl: 'https://music.163.com/#/song?id=1' }))
+      .resolves.toEqual(['[00:00]第一句', '[00:00]first line'])
+  })
+
+  it('reports the source name when no playable url is returned', async () => {
+    const provider = new NeteaseProvider({
+      baseUrl: 'https://api.example.test',
+      fetchJson: async <T = unknown>() => ({ data: [{ url: null }] }) as T
+    })
+
+    await expect(provider.getPlayable({ id: '1', source: 'netease', title: '青花', artists: [], pageUrl: 'https://music.163.com/#/song?id=1' }))
+      .rejects.toThrow('网易云：未获取到')
+  })
+
   it('normalizes cookie status', () => {
     expect(normalizeNeteaseCookieStatus({ code: 200, profile: { nickname: 'Hira' } })).toEqual({
       ok: true,
@@ -105,6 +128,11 @@ describe('Netease provider helpers', () => {
     expect(normalizeNeteaseCookieStatus({ code: 301 })).toEqual({
       ok: false,
       message: 'Cookie 失效或未登录'
+    })
+    expect(normalizeNeteaseCookieStatus({ code: 200, profile: { nickname: 'Hira' }, account: { vipType: 11 } })).toEqual({
+      ok: true,
+      message: 'Hira',
+      vip: true
     })
   })
 })

@@ -6,7 +6,10 @@ import { createConfiguredCommandRegExp, isHiraAppEnabled } from '@/apps/runtime'
 import { buildHelpCardHtml, logCardRenderFailure, renderCardImage } from '@/services/cardRender'
 import { replyPlainText } from '@/services/message'
 
-export const helpReg = createConfiguredCommandRegExp(Config.app.helpCommand, ['hira\\s*帮助', 'hi\\s*帮助'])
+/** R apps/help.js 的别名表：菜单/help/说明/功能/指令/使用说明 都算帮助命令。 */
+export const helpAliases = ['hira\\s*帮助', 'hi\\s*帮助', '菜单', 'help', '说明', '功能', '指令', '使用说明']
+
+export const helpReg = createConfiguredCommandRegExp(Config.app.helpCommand, helpAliases)
 
 type ReplyPayload = Parameters<Message['reply']>[0]
 
@@ -46,10 +49,11 @@ export const helpMenu = [
   {
     title: '轻量与 AI',
     items: [
-      { title: '#cat / #买家秀 / #累了', description: '轻量娱乐命令。', icon: '玩' },
-      { title: '#医药查询 / #推荐软件', description: '常用查询命令。', icon: '?' },
-      { title: '翻中 / 翻英 / 翻日 <文本>', description: '文本翻译。', icon: '译' },
-      { title: '#总结一下 <链接>', description: '网页总结，需要先启用并配置 API Key。', icon: 'AI' }
+      { title: '#cat / #买家秀 / #累了', description: '轻量娱乐命令，多图以合并聊天记录展示。', icon: '玩' },
+      { title: '#医药查询 [关键词]', description: '常用查询命令；不带关键词返回最新条目。', icon: '?' },
+      { title: '#推荐软件 [关键词]', description: '不带关键词返回全部推荐和下载地址。', icon: '软' },
+      { title: '翻中/翻英/翻日 <文本>', description: '文本翻译，目标语言后可以不加空格（翻中hello）。', icon: '译' },
+      { title: '#总结一下 <链接>', description: '网页总结，需要先启用并配置 API Key；配置域名的链接会自动总结。', icon: 'AI' }
     ]
   },
   {
@@ -89,6 +93,8 @@ export const replyHelp = async (e: Message) => {
 
 export const help = karin.command(helpReg, async (e, next) => {
   if (!isHiraAppEnabled()) return next?.()
+  // karin 的命令正则只在模块加载时生成，这里按当前配置再匹配一次，改 helpCommand 后即时生效。
+  if (!createConfiguredCommandRegExp(Config.app.helpCommand, helpAliases).test(e.msg.trim())) return next?.()
   await replyHelp(e)
   return true
 }, {

@@ -2,8 +2,8 @@ import type { Message } from 'node-karin'
 
 import { isHiraAppEnabled } from '@/apps/runtime'
 import { Config, updateMusicCookie } from '@/config'
-import { maskCookie, parseMusicCookieCommand } from '@/music/cookieCommand'
-import { getMusicCookieStatusLines } from '@/music/cookieStatus'
+import { maskCookie, musicCookieHelp, parseMusicCookieCommand } from '@/music/cookieCommand'
+import { getMusicCookieStatusLines, validateMusicCookie } from '@/music/cookieStatus'
 import type { MusicSource } from '@/music/types'
 import { buildStatusCardHtml, logCardRenderFailure, renderCardImage } from '@/services/cardRender'
 import { replyText } from '@/services/message'
@@ -79,13 +79,37 @@ export const handleMusicCookieMessage = async (e: Message, next?: () => unknown)
   const command = parseMusicCookieCommand(e.msg)
   if (command.type === 'none') return next?.()
 
-  if (!isPrivileged(e)) {
-    await replyText(e, '音乐 Cookie 只能由主人或管理员管理')
+  // 权限不足时静默放行, 不吞消息(不占位回 "暂无权限").
+  if (!isPrivileged(e)) return next?.()
+
+  if (command.type === 'help') {
+    await replyText(e, musicCookieHelp)
     return true
   }
 
   if (command.type === 'submit') {
+    const result = await validateMusicCookie({
+      cookies: Config.music.cookies,
+      neteaseBaseUrl: Config.music.api.neteaseBaseUrl,
+      qqTempApi: Config.music.api.qqTempApi
+    }, command.source, command.cookie)
+
+    if (result.checkable && !result.ok) {
+      await replyText(e, `${sourceName(command.source)} ck 不正确或已失效，请重新获取！`)
+      return true
+    }
+
     updateMusicCookie(command.source, command.cookie)
+
+    if (result.checkable) {
+      await replyText(e, [
+        `${sourceName(command.source)}ck 提交成功！`,
+        `账号：${result.message ?? '未知'}`,
+        `是否VIP：${result.vip ? '是' : '否'}`
+      ].join('\n'))
+      return true
+    }
+
     await replyText(e, `已更新 ${sourceName(command.source)} Cookie：${maskCookie(command.cookie)}`)
     return true
   }

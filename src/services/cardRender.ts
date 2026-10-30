@@ -1024,7 +1024,7 @@ export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number,
           ${item.duration ? `<div class="duration">${escapeHtml(item.duration)}</div>` : ''}
         </article>`).join('')}
       </div>
-      <p class="card-tip">发送序号点歌，也可以发送 #下一页 翻页</p>`
+      <p class="card-tip">发送序号点歌，列表超时后失效，也可以发送 #下一页 翻页</p>`
 })
 
 const statusText = (status: StatusCardItem['status']) => ({
@@ -1481,6 +1481,35 @@ export const writeCardHtmlFile = (html: string, name: string) => {
   return file
 }
 
+/**
+ * 相同 HTML(+宽度) 直接复用上次截图, 参考 R apps/help.js:31-42 的 md5 缓存.
+ * 截图成本高且状态卡/帮助卡在短时间内高度重复; 限制条数避免常驻内存膨胀.
+ */
+const cardImageCache = new Map<string, ImageElement[]>()
+const cardImageCacheLimit = 64
+
+export const clearCardRenderCache = () => {
+  cardImageCache.clear()
+}
+
+const readCardImageCache = (key: string) => {
+  const cached = cardImageCache.get(key)
+  if (!cached) return undefined
+  // LRU: 命中后移到末尾, 淘汰最久未用的条目.
+  cardImageCache.delete(key)
+  cardImageCache.set(key, cached)
+  return cached
+}
+
+const writeCardImageCache = (key: string, images: ImageElement[]) => {
+  cardImageCache.set(key, images)
+  while (cardImageCache.size > cardImageCacheLimit) {
+    const oldest = cardImageCache.keys().next().value
+    if (oldest === undefined) break
+    cardImageCache.delete(oldest)
+  }
+}
+
 export const renderCardImage = async ({
   name,
   html,
@@ -1488,6 +1517,13 @@ export const renderCardImage = async ({
   writeHtml = writeCardHtmlFile,
   render = karinRender.render.bind(karinRender) as (options: Record<string, unknown>) => Promise<string | string[]>
 }: RenderOptions): Promise<ImageElement[]> => {
+  const cacheKey = crypto.createHash('md5').update(`${width}\n${html}`).digest('hex')
+  const cached = readCardImageCache(cacheKey)
+  if (cached) {
+    logger.debug(`[${Root.pluginName}] Render card ${name}: cache hit`)
+    return cached
+  }
+
   const file = writeHtml(html, name)
   const result = await render({
     name: `${Root.pluginName}/card-${name}`,
@@ -1507,10 +1543,10 @@ export const renderCardImage = async ({
       timeout: 10_000
     }
   })
-  const images = Array.isArray(result) ? result : [result]
-  const elements = images.map(image => segment.image(`base64://${image}`))
-  logger.debug(`[${Root.pluginName}] Render card ${name}: ${file}, images=${elements.length}`)
-  return elements
+  const images = (Array.isArray(result) ? result : [result]).map(image => segment.image(`base64://${image}`))
+  writeCardImageCache(cacheKey, images)
+  logger.debug(`[${Root.pluginName}] Render card ${name}: ${file}, images=${images.length}`)
+  return images
 }
 
 export const logCardRenderFailure = (name: string, error: unknown) => {

@@ -1,7 +1,10 @@
-import { fetchResolverJson } from '@/services/resolverHttp'
+import { fetchResolverJson, resolveResolverRedirectUrl } from '@/services/resolverHttp'
 
+import { resolveAcfun } from './acfun'
 import { dedupeImageUrls } from './media'
+import { resolvePipixia } from './pipixia'
 import type { ResolvedPost, ResolverFailure, ResolverPlatform, ResolverResult, RichContentBlock } from './types'
+import { hostnameOf } from './url'
 
 type UnknownObject = Record<string, unknown>
 export type GeneralNormalizeOptions = {
@@ -154,7 +157,7 @@ export const normalizeGeneralApiResponse = (
     description,
     author,
     pageUrl: options.pageUrl,
-    videos,
+    videos: videos.map(url => ({ url })),
     images,
     extras: {
       coverUrl,
@@ -196,4 +199,73 @@ export const resolveByGeneralApis = async (
   }
 
   return lastFailure
+}
+
+const isHost = (hostname: string, domain: string) => hostname === domain || hostname.endsWith(`.${domain}`)
+
+export type GeneralResolveDeps = {
+  /** 短链展开失败不应该让解析整体失败，调用方传入可注入的实现便于测试。 */
+  expandShortUrl?: (url: string) => Promise<string>
+}
+
+/**
+ * 西瓜短链（v.ixigua.com/xxx）先跟一次跳转拿到数字视频 id，再统一成 `www.ixigua.com/<id>`；
+ * R 插件在 controller 阶段就还原短链，否则第三方接口拿到的短链经常 404。
+ */
+export const normalizeXiguaUrl = async (url: string, expand: (url: string) => Promise<string>) => {
+  const hostname = hostnameOf(url) || ''
+  if (!isHost(hostname, 'ixigua.com')) return url
+
+  let target = url
+  if (hostname.startsWith('v.')) {
+    try {
+      target = await expand(url)
+    } catch {
+      target = url
+    }
+  }
+
+  const id = target.match(/ixigua\.com\/(\d+)/)?.[1] || target.match(/\/video\/(\d+)/)?.[1]
+  return id ? `https://www.ixigua.com/${id}` : target
+}
+
+type GeneralPlatform = {
+  displayName: string
+  resolveNative?: (url: string) => Promise<ResolverResult>
+}
+
+/** 域名决定展示名：通用平台此前一律显示「通用解析」，和 R 插件的「识别：西瓜」不符。 */
+const generalPlatformOf = (url: string): GeneralPlatform => {
+  const hostname = hostnameOf(url) || ''
+  if (isHost(hostname, 'pipix.com')) return { displayName: '皮皮虾', resolveNative: resolvePipixia }
+  if (isHost(hostname, 'acfun.cn')) return { displayName: 'AcFun', resolveNative: resolveAcfun }
+  if (isHost(hostname, 'ixigua.com')) return { displayName: '西瓜' }
+  if (isHost(hostname, 'pipigx.com')) return { displayName: '皮皮搞笑' }
+  if (isHost(hostname, 'xsj.qq.com')) return { displayName: 'QQ小世界' }
+  if (isHost(hostname, 'okjike.com')) return { displayName: '即刻' }
+  return { displayName: '通用解析' }
+}
+
+/**
+ * 通用平台入口：先走原生解析（皮皮虾无水印视频/评论、AcFun 稿件详情），
+ * 失败或平台没有原生实现时降级到第三方接口轮换。
+ */
+export const resolveGeneral = async (
+  url: string,
+  apiTemplates: string[],
+  deps: GeneralResolveDeps = {}
+): Promise<ResolverResult> => {
+  const platform = generalPlatformOf(url)
+
+  if (platform.resolveNative) {
+    const native = await platform.resolveNative(url).catch((): ResolverResult => failure(platform.displayName, '原生解析失败'))
+    if (!('ok' in native)) return native
+  }
+
+  const expand = deps.expandShortUrl ?? resolveResolverRedirectUrl
+  const targetUrl = await normalizeXiguaUrl(url, expand)
+  return resolveByGeneralApis(platform.displayName, targetUrl, apiTemplates, {
+    platform: 'general',
+    pageUrl: targetUrl
+  })
 }

@@ -26,7 +26,7 @@ describe('weibo enhanced normalization', () => {
 
     expect(result.description).toContain('正文')
     expect(result.description).toContain('热门评论')
-    expect(result.videos).toEqual(['https://video/hd.mp4'])
+    expect(result.videos).toEqual([{ url: 'https://video/hd.mp4' }])
     expect(result.images).toEqual(['https://img/a.jpg'])
     expect(result.extras?.contentBlocks).toEqual([
       { type: 'text', text: '正文' },
@@ -60,7 +60,7 @@ describe('weibo enhanced normalization', () => {
       title: '这是完整长文正文',
       description: expect.stringContaining('这是完整长文正文'),
       images: ['https://wx1.sinaimg.cn/large/video-cover.jpg'],
-      videos: ['https://video/weibo.mp4'],
+      videos: [{ url: 'https://video/weibo.mp4' }],
       extras: {
         coverUrl: 'https://wx1.sinaimg.cn/large/video-cover.jpg',
         authorAvatar: 'https://tvax1.sinaimg.cn/avatar.jpg',
@@ -97,13 +97,122 @@ describe('weibo enhanced normalization', () => {
       'https://wx1.sinaimg.cn/large/retweeted.jpg',
       'https://wx1.sinaimg.cn/large/retweeted-cover.jpg'
     ])
-    expect(result.videos).toEqual(['https://video/retweeted.mp4'])
+    expect(result.videos).toEqual([{ url: 'https://video/retweeted.mp4' }])
     expect(result.extras?.tags).toEqual(['转发'])
     expect(result.extras?.contentBlocks).toEqual([
       { type: 'text', text: '转发理由' },
       { type: 'text', text: '转发 @原作者：原微博正文' },
       { type: 'image', url: 'https://wx1.sinaimg.cn/large/retweeted.jpg' },
       { type: 'image', url: 'https://wx1.sinaimg.cn/large/retweeted-cover.jpg' }
+    ])
+  })
+
+  it('keeps like count, reply count, time, and source for hotflow comments', () => {
+    const comments = normalizeWeiboComments({
+      data: {
+        data: [{
+          user: { screen_name: '路人' },
+          text: '<span>好看</span>',
+          like_count: '12',
+          total_number: 3,
+          created_at: 'Wed Jun 17 12:00:00 +0800 2026',
+          source: '来自 iPhone客户端'
+        }]
+      }
+    })
+
+    expect(comments).toEqual([{
+      author: '路人',
+      text: '好看',
+      images: [],
+      likeCount: 12,
+      replyCount: 3,
+      time: expect.stringMatching(/^\d{2}-\d{2}-\d{2} \d{2}:\d{2}$/),
+      location: '来自 iPhone客户端'
+    }])
+
+    const result = normalizeWeiboStatus('https://weibo.com/1/abc', {
+      text: '<p>正文</p>',
+      bid: 'abc',
+      user: { id: '1' }
+    }, comments)
+    expect(result.description).toContain('路人：好看 (👍12)')
+  })
+
+  it('keeps up to twenty hotflow comments like the R plugin', () => {
+    const comments = normalizeWeiboComments({
+      data: {
+        data: Array.from({ length: 25 }, (_, index) => ({
+          user: { screen_name: `用户${index}` },
+          text: `评论${index}`,
+          like_count: index
+        }))
+      }
+    })
+
+    expect(comments).toHaveLength(20)
+    expect(comments[0]).toMatchObject({ author: '用户0', text: '评论0', likeCount: 0 })
+  })
+
+  it('uses status_title for headline articles', () => {
+    const result = normalizeWeiboStatus('https://weibo.com/1/abc', {
+      text: '<p>发布了头条文章</p>',
+      status_title: '《这就是标题》',
+      bid: 'abc',
+      user: { id: '1', screen_name: 'Hira' }
+    })
+
+    expect(result.title).toBe('《这就是标题》')
+    expect(result.extras?.contentBlocks).toEqual([
+      { type: 'text', text: '发布了头条文章' },
+      { type: 'text', text: '《这就是标题》' }
+    ])
+  })
+
+  it('extracts vote option images from the desktop page when pictures are missing', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('https://m.weibo.cn/detail/')) {
+        return new Response(`
+          <script>
+            $render_data = [{
+              "status": {
+                "text": "<p>投票</p>",
+                "bid": "R47877p8L",
+                "user": { "id": "1886633831", "screen_name": "Hira" }
+              }
+            }][0]
+          </script>
+        `, { status: 200 })
+      }
+      if (url.startsWith('https://m.weibo.cn/comments/hotflow')) {
+        return new Response(JSON.stringify({ data: { data: [] } }), { status: 200 })
+      }
+      if (url.startsWith('https://weibo.com/1886633831/')) {
+        return new Response(`
+          <img src="https://wx2.sinaimg.cn/bmiddle/abc.jpg">
+          <img src="https://wx2.sinaimg.cn/mw2000/def.jpg">
+          <img src="https://wx2.sinaimg.cn/orj360/ghi.jpg">
+          <img src="https://wx2.sinaimg.cn/thumbnail/avatar.jpg">
+        `, { status: 200 })
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveWeibo('https://weibo.com/1886633831/R47877p8L')
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.images).toEqual([
+      'https://wx2.sinaimg.cn/large/abc.jpg',
+      'https://wx2.sinaimg.cn/large/def.jpg',
+      'https://wx2.sinaimg.cn/large/ghi.jpg'
+    ])
+    expect(result.extras?.contentBlocks).toEqual([
+      { type: 'text', text: '投票' },
+      { type: 'image', url: 'https://wx2.sinaimg.cn/large/abc.jpg' },
+      { type: 'image', url: 'https://wx2.sinaimg.cn/large/def.jpg' },
+      { type: 'image', url: 'https://wx2.sinaimg.cn/large/ghi.jpg' }
     ])
   })
 
@@ -157,7 +266,7 @@ describe('weibo enhanced normalization', () => {
       author: 'Hira',
       pageUrl: 'https://weibo.com/1886633831/R47877p8L',
       images: ['https://wx1.sinaimg.cn/large/a.jpg'],
-      videos: ['https://video.weibo/720.mp4']
+      videos: [{ url: 'https://video.weibo/720.mp4' }]
     })
     expect('ok' in result).toBe(false)
     if ('ok' in result) throw new Error('expected successful result')

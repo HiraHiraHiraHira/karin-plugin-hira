@@ -1,13 +1,10 @@
 import { Config } from '@/config'
-import { downloadFile } from '@/runtime/downloader'
-import { runFfmpeg } from '@/runtime/ffmpeg'
-import { createTempFilePath } from '@/runtime/temp'
 import { fetchResolverJson, fetchResolverText, resolveResolverRedirectUrl } from '@/services/resolverHttp'
 import type { ResolverConfig } from '@/types/config'
 
 import { isLikelyVideoUrl, resolveByGeneralApis } from './general'
 import { logResolverStage } from './resolverLog'
-import type { ResolvedPost, ResolverFailure, ResolverResult } from './types'
+import type { ResolvedPost, ResolverFailure, ResolverResult, ResolverVideo } from './types'
 
 const failure = (reason: string): ResolverFailure => ({
   platform: 'douyin',
@@ -37,14 +34,14 @@ const pushUnique = (items: string[], value: unknown) => {
   if (url && !items.includes(url)) items.push(url)
 }
 
-const pushUniqueVideo = (items: string[], value: unknown) => {
-  const url = firstVideoUrl(value)
-  if (url && !items.includes(url)) items.push(url)
-}
-
-const isDouyinStaticImage = (image: Record<string, any>) => {
-  const clipType = Number(image.clip_type)
-  return image.clip_type === undefined || clipType === 2
+const pushVideo = (items: ResolverVideo[], url: string | undefined, audioUrl?: string) => {
+  if (!url) return
+  const existing = items.find(item => item.url === url)
+  if (!existing) {
+    items.push({ url, ...(audioUrl ? { audioUrl } : {}) })
+    return
+  }
+  if (audioUrl && !existing.audioUrl) existing.audioUrl = audioUrl
 }
 
 type DouyinQuality = ResolverConfig['douyin']['quality']
@@ -75,6 +72,16 @@ const normalizeNumber = (value: unknown, fallback: number) => {
 const normalizeBytes = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
+/**
+ * 抖音 `video.duration` 一般是毫秒, 但动图/部分接口会给秒。
+ * 小于 1000 的值按秒处理, 避免 <1s 片段被当成上千秒的长视频而误判超限。
+ */
+const douyinDurationSeconds = (value: unknown) => {
+  const raw = normalizeNumber(value, 0)
+  if (raw <= 0) return 0
+  return raw < 1000 ? Math.round(raw) : Math.trunc(raw / 1000)
 }
 
 const douyinQualityFromGear = (gearName: unknown): FixedDouyinQuality => {
@@ -206,6 +213,94 @@ export const extractDouyinAwemeId = (url: string) => {
   }
 }
 
+export type DouyinTarget =
+  | { kind: 'live', roomId: string, via: 'enter' | 'reflow' }
+  | { kind: 'work', awemeId?: string }
+
+/**
+ * 直播间识别: `live.douyin.com/<web_rid>` 走网页 enter 接口,
+ * `webcast.amemv.com` 的 reflow 链接走客户端接口;两者都不能当普通作品解析。
+ */
+export const classifyDouyinUrl = (url: string): DouyinTarget => {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return { kind: 'work' }
+  }
+
+  const hostname = parsed.hostname.toLowerCase()
+  if (hostname === 'webcast.amemv.com') {
+    const roomId = parsed.pathname.match(/\/webcast\/reflow\/(\d+)/)?.[1]
+    if (roomId) return { kind: 'live', roomId, via: 'reflow' }
+  }
+  if (hostname === 'live.douyin.com' || hostname.endsWith('.live.douyin.com')) {
+    const roomId = parsed.pathname.match(/^\/(\d+)/)?.[1]
+    if (roomId) return { kind: 'live', roomId, via: 'enter' }
+  }
+  const liveRoomId = parsed.pathname.match(/\/live\/(\d+)/)?.[1]
+  if (liveRoomId) return { kind: 'live', roomId: liveRoomId, via: 'enter' }
+
+  return { kind: 'work', awemeId: extractDouyinAwemeId(url) }
+}
+
+/**
+ * reflow 接口要求 `verifyFp` 设备指纹: 36 位随机串, 第 9/14/19/24 位是下划线, 第 15 位固定 4。
+ * 与 R `utils/tiktok.js` 的 genVerifyFp 同构。
+ */
+const createDouyinVerifyFp = () => {
+  const base = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+  const slots = new Array<string>(36).fill('')
+  for (const index of [8, 13, 18, 23]) slots[index] = '_'
+  slots[14] = '4'
+  for (let index = 0; index < 36; index += 1) {
+    if (slots[index]) continue
+    let pick = Math.floor(Math.random() * base.length)
+    if (index === 19) pick = (3 & pick) | 8
+    slots[index] = base[pick]
+  }
+  return `verify_${Date.now().toString(36)}_${slots.join('')}`
+}
+
+const createDouyinLiveUrl = (roomId: string, via: 'enter' | 'reflow', msToken = '') => {
+  if (via === 'reflow') {
+    const reflow = new URL('https://webcast.amemv.com/webcast/room/reflow/info/')
+    reflow.searchParams.set('type_id', '0')
+    reflow.searchParams.set('live_id', '1')
+    reflow.searchParams.set('sec_user_id', '')
+    reflow.searchParams.set('version_code', '99.99.99')
+    reflow.searchParams.set('app_id', '1128')
+    reflow.searchParams.set('room_id', roomId)
+    reflow.searchParams.set('verifyFp', createDouyinVerifyFp())
+    if (msToken) reflow.searchParams.set('msToken', msToken)
+    return reflow.toString()
+  }
+  const url = new URL('https://live.douyin.com/webcast/room/web/enter/')
+  url.searchParams.set('device_platform', 'webapp')
+  url.searchParams.set('aid', '6383')
+  url.searchParams.set('channel', 'channel_pc_web')
+  url.searchParams.set('pc_client_type', '1')
+  url.searchParams.set('version_code', '190500')
+  url.searchParams.set('version_name', '19.5.0')
+  url.searchParams.set('cookie_enabled', 'true')
+  url.searchParams.set('screen_width', '1920')
+  url.searchParams.set('screen_height', '1080')
+  url.searchParams.set('browser_language', 'zh-CN')
+  url.searchParams.set('browser_platform', 'Win32')
+  url.searchParams.set('browser_name', 'Firefox')
+  url.searchParams.set('browser_version', '124.0')
+  url.searchParams.set('browser_online', 'true')
+  url.searchParams.set('engine_name', 'Gecko')
+  url.searchParams.set('engine_version', '122.0.0.0')
+  url.searchParams.set('os_name', 'Windows')
+  url.searchParams.set('os_version', '10')
+  url.searchParams.set('cpu_core_num', '12')
+  url.searchParams.set('device_memory', '8')
+  url.searchParams.set('platform', 'PC')
+  url.searchParams.set('web_rid', roomId)
+  return url.toString()
+}
+
 /**
  * 在任意快照结构里找 `aweme_detail` 对象.
  * 真实页面形状不固定(`__NEXT_DATA__` 是 props.pageProps.aweme_detail,
@@ -235,6 +330,13 @@ const findAwemeDetail = (node: unknown, depth = 0): Record<string, unknown> | un
   return undefined
 }
 
+/** 图集的 BGM: `music.play_url` 优先取直链, 只留 `uri` 时也登记, 由发送侧按需处理。 */
+const douyinMusicUrl = (music: unknown) => {
+  const playUrl = asObject(asObject(music)?.play_url)
+  if (!playUrl) return undefined
+  return firstUrl(playUrl.url_list) || (typeof playUrl.uri === 'string' && playUrl.uri.trim() ? playUrl.uri : undefined)
+}
+
 export const normalizeDouyinDetail = (
   pageUrl: string,
   payload: unknown,
@@ -245,45 +347,66 @@ export const normalizeDouyinDetail = (
   if (!detail) return failure('抖音接口返回异常')
 
   const images: string[] = []
-  const videos: string[] = []
+  const videos: ResolverVideo[] = []
   const quality = normalizeQuality(options.quality)
   const maxVideoDurationSeconds = normalizeNumber(options.maxVideoDurationSeconds, 0)
   let limitMessage = ''
 
-  for (const image of Array.isArray(detail.images) ? detail.images : []) {
-    pushUnique(images, image?.url_list)
-    const imageVideo = asObject(image?.video)
-    if (imageVideo && isDouyinStaticImage(image)) pushUniqueVideo(videos, selectDouyinVideoUrl(imageVideo, quality))
-  }
-
+  const imageItems = Array.isArray(detail.images) ? detail.images : []
   const video = asObject(detail.video)
-  if (video) {
-    pushUnique(images, video.cover?.url_list)
-    pushUnique(images, video.origin_cover?.url_list)
+  const author = asObject(detail.author)
 
-    const durationMs = normalizeNumber(video.duration, 0)
-    const durationSeconds = durationMs > 1000 ? Math.trunc(durationMs / 1000) : durationMs
+  if (imageItems.length > 0) {
+    // 图集/动图: 带 clip 的项只登记视频(与 R 的 processDouyinImageAlbum 一致, 视频取代静帧),
+    // 没有 clip 的静帧才进 images —— images/videos 互不重叠, 发送侧无需去重或按顺序对齐。
+    const isOriginalSound = detail.is_use_music === false
+      || Number(asObject(detail.image_album_music_info)?.volume) === 0
+    const bgmUrl = isOriginalSound ? undefined : douyinMusicUrl(detail.music)
+
+    for (const rawImage of imageItems) {
+      const image = asObject(rawImage)
+      if (!image) continue
+      const clipUrl = selectDouyinVideoUrl(asObject(image.video) || {}, quality)
+      if (clipUrl) {
+        pushVideo(videos, clipUrl, bgmUrl)
+        continue
+      }
+      pushUnique(images, image.url_list)
+    }
+    pushUnique(images, asObject(video?.cover)?.url_list)
+  } else if (video) {
+    pushUnique(images, asObject(video.cover)?.url_list)
+    pushUnique(images, asObject(video.origin_cover)?.url_list)
+
+    const durationSeconds = douyinDurationSeconds(video.duration)
     const overDurationLimit = maxVideoDurationSeconds > 0 && durationSeconds > maxVideoDurationSeconds
 
     if (overDurationLimit) {
       limitMessage = `视频时长 ${durationSeconds} 秒，超过当前下载上限 ${maxVideoDurationSeconds} 秒，仅返回视频信息。`
     } else {
-      pushUniqueVideo(videos, selectDouyinVideoUrl(video, quality))
+      pushVideo(videos, selectDouyinVideoUrl(video, quality))
     }
   }
 
   if (images.length === 0 && videos.length === 0) return failure('未找到抖音媒体资源')
 
   const desc = typeof detail.desc === 'string' ? detail.desc : ''
+  const coverUrl = images[0]
+  const authorAvatar = firstUrl(asObject(author?.avatar_thumb)?.url_list)
+
   return {
     platform: 'douyin',
     displayName: '抖音',
     title: desc || '抖音作品',
     description: [desc, limitMessage].filter(Boolean).join('\n'),
-    author: asObject(detail.author)?.nickname,
+    author: author?.nickname,
     pageUrl,
     videos,
-    images
+    images,
+    extras: {
+      coverUrl,
+      ...(authorAvatar ? { authorAvatar } : {})
+    }
   }
 }
 
@@ -354,63 +477,63 @@ const expandShortUrl = async (url: string) => {
   return resolveResolverRedirectUrl(url)
 }
 
-const downloadDouyinVideos = async (result: ResolvedPost, headers: Record<string, string>) => {
-  if (result.videos.length === 0) return result
-
-  const timeoutMs = Math.max(10, Config.runtime.downloadTimeoutSeconds) * 1000
-  const videos: string[] = []
-  let failedDownloads = 0
-  // Keep the established one-video delivery policy; extra URLs remain only as resolver candidates.
-  for (const videoUrl of result.videos.slice(0, 1)) {
-    try {
-      const rawVideo = await downloadFile({
-        url: videoUrl,
-        output: createTempFilePath('douyin', 'mp4'),
-        headers,
-        timeoutMs,
-        proxy: Config.resolver.proxy,
-        maxBytes: Config.runtime.maxVideoFileSizeBytes
-      })
-      try {
-        videos.push(await runFfmpeg({
-          input: rawVideo,
-          output: createTempFilePath('douyin', 'mp4'),
-          format: 'qq-video'
-        }))
-      } catch {
-        videos.push(rawVideo)
-      }
-    } catch {
-      failedDownloads += 1
-      logResolverStage({
-        platform: 'douyin',
-        stage: 'media',
-        ok: false,
-        reason: 'video download failed',
-        url: videoUrl,
-        extra: { fallback: 'cover-link-only' }
-      })
-    }
+const resolveDouyinLive = async (
+  target: Extract<DouyinTarget, { kind: 'live' }>,
+  url: string,
+  cookie: string,
+  ssrHeaders: Record<string, string>
+): Promise<ResolverResult> => {
+  const headers = { ...ssrHeaders, ...(cookie ? { Cookie: cookie } : {}) }
+  // reflow 需要 msToken; Cookie 里的 ttwid 是 R 插件同款的取用位置,缺失时不带该参数
+  const msToken = cookie.match(/(?:^|;\s*)ttwid=([^;]+)/)?.[1] || ''
+  let payload: unknown
+  try {
+    payload = await fetchResolverJson(createDouyinLiveUrl(target.roomId, target.via, msToken), { headers })
+  } catch (error) {
+    logResolverStage({
+      platform: 'douyin',
+      stage: 'api',
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      url
+    })
+    return failure('直播间信息获取失败，请检查链接或稍后重试')
   }
 
-  if (failedDownloads === 0) return { ...result, videos }
+  const data = asObject(asObject(payload)?.data)
+  const room = target.via === 'reflow'
+    ? asObject(data?.room)
+    : asObject(Array.isArray(data?.data) ? data?.data[0] : undefined)
+  if (!room) {
+    logResolverStage({ platform: 'douyin', stage: 'normalize', ok: false, reason: 'live room data missing', url })
+    return failure('直播间信息为空，可能未开播或链接已失效')
+  }
 
-  const downloadMessage = videos.length > 0
-    ? '部分视频下载失败，已跳过不可用视频。'
-    : '视频下载失败，已仅返回作品信息。'
-
-  logResolverStage({
-    platform: 'douyin',
-    stage: 'fallback',
-    ok: true,
-    url: result.pageUrl,
-    extra: { source: videos.length > 0 ? 'partial-video-download' : 'cover-link-only' }
-  })
+  const coverList = asObject(room.cover)?.url_list
+  const coverUrl = Array.isArray(coverList)
+    ? coverList.filter((item): item is string => typeof item === 'string' && Boolean(item.trim())).pop()
+    : undefined
+  const owner = asObject(room.owner)
+  const onlineText = typeof room.user_count_str === 'string' && room.user_count_str.trim()
+    ? room.user_count_str.trim()
+    : Number.isFinite(Number(room.user_count)) && Number(room.user_count) > 0 ? String(Number(room.user_count)) : undefined
+  const statusText = Number(room.status) === 2 ? '正在直播' : '未开播'
+  const description = [
+    typeof room.title === 'string' && room.title.trim() ? `📝 标题：${room.title.trim()}` : '',
+    onlineText ? `🏄 在线人数：${onlineText}人正在观看` : '',
+    `📺 状态：${statusText}`
+  ].filter(Boolean).join('\n')
 
   return {
-    ...result,
-    videos,
-    description: [result.description, downloadMessage].filter(Boolean).join('\n')
+    platform: 'douyin',
+    displayName: '抖音直播',
+    title: String(room.title || '抖音直播间'),
+    description,
+    author: typeof owner?.nickname === 'string' ? owner.nickname : undefined,
+    pageUrl: url,
+    videos: [],
+    images: coverUrl ? [coverUrl] : [],
+    extras: { coverUrl }
   }
 }
 
@@ -438,7 +561,10 @@ export const resolveDouyin = async (
     Referer: 'https://www.douyin.com/'
   }
 
-  const awemeId = extractDouyinAwemeId(finalUrl)
+  const target = classifyDouyinUrl(finalUrl)
+  if (target.kind === 'live') return resolveDouyinLive(target, finalUrl, cookie, ssrHeaders)
+
+  const awemeId = target.awemeId
   if (cookie && awemeId) {
     try {
       const headers = { ...ssrHeaders, Cookie: cookie }
@@ -452,7 +578,7 @@ export const resolveDouyin = async (
           url: finalUrl,
           extra: { source: 'web-detail' }
         })
-        return downloadDouyinVideos(result, headers)
+        return result
       }
       logResolverStage({
         platform: 'douyin',
@@ -480,7 +606,7 @@ export const resolveDouyin = async (
     const ssr = normalizeDouyinSsrHtml(finalUrl, html, normalizeOptions)
     if (!('ok' in ssr)) {
       logResolverStage({ platform: 'douyin', stage: 'api', ok: true, url: finalUrl, extra: { source: 'ssr-html' } })
-      return downloadDouyinVideos(ssr, ssrHeaders)
+      return ssr
     }
     logResolverStage({ platform: 'douyin', stage: 'normalize', ok: false, reason: ssr.reason, url: finalUrl, extra: { fallback: 'general-api' } })
   } catch (error) {

@@ -112,31 +112,37 @@ describe('MusicSessionStore', () => {
     expect(store.get('group:1')).toBeUndefined()
   })
 
-  it('recalls the list message once and fires onExpire', () => {
-    const expired: unknown[] = []
+  it('collects every page list message and recalls them all on expire', () => {
+    const expired: MusicSessionListTarget[][] = []
     let now = 1000
-    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (t) => { expired.push(t) } })
+    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (targets) => { expired.push(targets) } })
 
     store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
-    store.setListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm1' })
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm1' })
+    store.appendPage('group:1', [item('b')], 2)
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm2' })
+    // 同一条重复登记只保留一份
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm2' })
 
-    expect(store.takeListMessage('group:1')?.messageId).toBe('m1')
-    expect(store.takeListMessage('group:1')).toBeUndefined()
+    expect(store.takeListMessages('group:1').map(target => target.messageId)).toEqual(['m1', 'm2'])
+    expect(store.takeListMessages('group:1')).toEqual([])
 
-    store.set('group:1', [item('b')], { keyword: '雨天', source: 'netease', page: 1 })
-    store.setListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm2' })
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm3' })
     now = 3500
     expect(store.get('group:1')).toBeUndefined()
     expect(expired).toHaveLength(1)
+    expect(expired[0].map(target => target.messageId)).toEqual(['m3'])
   })
 
-  it('sweeps expired sessions, recalls their list message and keeps live ones', () => {
-    const expired: MusicSessionListTarget[] = []
+  it('sweeps expired sessions, recalls their list messages and keeps live ones', () => {
+    const expired: MusicSessionListTarget[][] = []
     let now = 1000
-    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (target) => { expired.push(target) } })
+    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (targets) => { expired.push(targets) } })
 
     store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
-    store.setListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm1' })
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm1' })
+    store.appendPage('group:1', [item('c')], 2)
+    store.addListMessage('group:1', { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm2' })
 
     now = 1500
     store.set('group:2', [item('b')], { keyword: '晴天', source: 'netease', page: 1 })
@@ -144,11 +150,10 @@ describe('MusicSessionStore', () => {
     // group:1 在 2000 到期,group:2 在 2500 到期
     now = 2001
     expect(store.sweep()).toBe(1)
-    expect(expired).toEqual([{
-      contact: { scene: 'group', peer: 'g1', name: '群' },
-      selfId: 'bot',
-      messageId: 'm1'
-    }])
+    expect(expired).toEqual([[
+      { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm1' },
+      { contact: { scene: 'group', peer: 'g1', name: '群' }, selfId: 'bot', messageId: 'm2' }
+    ]])
     expect(store.get('group:1')).toBeUndefined()
     expect(store.get('group:2')).toMatchObject({ items: [{ id: 'b' }] })
 
@@ -158,9 +163,9 @@ describe('MusicSessionStore', () => {
   })
 
   it('sweeps sessions without a list message silently', () => {
-    const expired: MusicSessionListTarget[] = []
+    const expired: MusicSessionListTarget[][] = []
     let now = 1000
-    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (target) => { expired.push(target) } })
+    const store = new MusicSessionStore({ ttlMs: 1000, now: () => now, onExpire: (targets) => { expired.push(targets) } })
 
     store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
 

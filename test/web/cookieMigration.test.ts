@@ -110,7 +110,8 @@ const baseConfig = (): ConfigType => ({
     apiBaseUrl: 'https://api.openai.com/v1',
     apiKey: '',
     model: 'gpt-4.1-mini',
-    maxInputChars: 12000
+    maxInputChars: 12000,
+    autoSummaryDomains: []
   }
 })
 

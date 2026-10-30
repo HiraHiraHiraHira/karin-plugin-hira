@@ -8,6 +8,8 @@ export { normalizeQQCookieStatus }
 export type CookieCheckResult = {
   ok: boolean
   message: string
+  /** 账号是否 VIP; 平台不返回时为 undefined */
+  vip?: boolean
 }
 
 type StatusOptions = {
@@ -25,7 +27,8 @@ const checkedStatus = async (cookie: string, check: () => Promise<CookieCheckRes
 
   try {
     const result = await check()
-    return `${result.ok ? '在线' : '失效'}（${result.message}）`
+    const vip = result.vip === undefined ? '' : `，${result.vip ? 'VIP' : '非VIP'}`
+    return `${result.ok ? '在线' : '失效'}（${result.message}${vip}）`
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return `检查失败（${message}）`
@@ -63,3 +66,26 @@ export const getMusicCookieStatusLines = (music: MusicConfig) => buildMusicCooki
   neteaseBaseUrl: music.api.neteaseBaseUrl,
   qqTempApi: music.api.qqTempApi
 })
+
+/**
+ * 提交前校验: 网易云/QQ 音乐会真实登录一次以回显账号与 VIP;
+ * 其它平台没有稳定的校验接口, 直接保存(与云崽一致).
+ */
+export const validateMusicCookie = async (
+  options: StatusOptions,
+  source: keyof MusicConfig['cookies'],
+  cookie: string
+): Promise<{ checkable: boolean, ok: boolean, message?: string, vip?: boolean }> => {
+  if (source === 'netease') {
+    const result = await new NeteaseProvider({
+      baseUrl: options.neteaseBaseUrl ?? 'https://neteasecloudmusicapi.vercel.app',
+      cookie
+    }).checkCookie()
+    return { checkable: true, ok: result.ok, message: result.message, vip: result.vip }
+  }
+  if (source === 'qq') {
+    const result = await new QQProvider({ tempApi: options.qqTempApi ?? '', cookie }).checkCookie()
+    return { checkable: true, ok: result.ok, message: result.message, vip: result.vip }
+  }
+  return { checkable: false, ok: true }
+}

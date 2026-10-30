@@ -5,6 +5,7 @@ import type { ResolvedPost, RichCommentBlock, RichContentBlock } from '@/resolve
 import {
   buildResolverCommentNodes,
   buildResolverContentNodes,
+  canSendResolverForward,
   formatResolverCommentBlock,
   resolverForwardCopy,
   resolveEventForwardIdentity
@@ -77,6 +78,12 @@ describe('resolver forward service', () => {
     ])
   })
 
+  it('requires both a contact and adapter forward support before forwarding', () => {
+    expect(canSendResolverForward({ contact: {} } as Message)).toBe(false)
+    expect(canSendResolverForward({ contact: {}, bot: { sendForwardMsg: () => undefined } } as unknown as Message)).toBe(true)
+    expect(canSendResolverForward({ bot: { sendForwardMsg: () => undefined } } as unknown as Message)).toBe(false)
+  })
+
   it('formats comment metadata without dangling separators', () => {
     expect(formatResolverCommentBlock({
       author: '路人',
@@ -93,6 +100,25 @@ describe('resolver forward service', () => {
       text: '只有正文',
       images: []
     })).toBe('路人\n\n只有正文')
+  })
+
+  it('renders like and reply counts inside the comment meta line', () => {
+    expect(formatResolverCommentBlock({
+      author: '路人',
+      floor: 2,
+      text: '评论内容',
+      images: [],
+      likeCount: 12,
+      replyCount: 3
+    })).toBe('路人\n2楼 · 👍 12 · 💬 3\n\n评论内容')
+
+    expect(formatResolverCommentBlock({
+      author: '路人',
+      text: '没有互动',
+      images: [],
+      likeCount: 0,
+      replyCount: 0
+    })).toBe('路人\n\n没有互动')
   })
 
   it('builds comment nodes per author and deduplicates comment images', () => {
@@ -114,13 +140,13 @@ describe('resolver forward service', () => {
       }
     ]
 
-    const nodes = buildResolverCommentNodes(comments)
+    const nodes = buildResolverCommentNodes(comments, { id: '10001', name: '发帖人昵称' })
 
     expect(nodes).toHaveLength(2)
     expect(nodes[0]).toMatchObject({
       type: 'node',
       subType: 'fake',
-      userId: '1',
+      userId: '10001',
       nickname: '路人'
     })
     expect(nodes[0]?.message).toMatchObject([

@@ -101,7 +101,7 @@ describe('normalizeXiaoheihePost', () => {
       title: '好玩的帖子',
       author: 'Hira',
       pageUrl: 'https://www.xiaoheihe.cn/app/bbs/link/abc123',
-      videos: ['https://video.example.test/a.mp4']
+      videos: [{ url: 'https://video.example.test/a.mp4' }]
     })
     expect('ok' in result).toBe(false)
     if ('ok' in result) throw new Error('expected successful post result')
@@ -194,6 +194,99 @@ describe('normalizeXiaoheihePost', () => {
       ok: false,
       reason: '小黑盒 API 返回异常'
     })
+  })
+
+  it('keeps every comment sorted by floor with like and reply counts', () => {
+    const commentThreads = [
+      {
+        comment: [
+          {
+            floor_num: 3,
+            text: '<p>三楼</p>',
+            user: { username: '丙' },
+            up: 7,
+            reply_num: 2
+          }
+        ]
+      },
+      {
+        comment: [
+          {
+            floor_num: 1,
+            text: '<p>一楼</p>',
+            user: { username: '甲' },
+            up: 0
+          },
+          {
+            floor_num: 2,
+            text: '<p>二楼</p>',
+            user: { username: '乙' }
+          }
+        ]
+      }
+    ]
+
+    const result = normalizeXiaoheihePost('https://www.xiaoheihe.cn/app/bbs/link/abc123', {
+      status: 'ok',
+      result: {
+        link: { title: '楼层排序', text: JSON.stringify([{ type: 'text', text: '正文' }]) },
+        comments: commentThreads
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful post result')
+    expect(result.extras?.commentBlocks?.map(block => block.floor)).toEqual([1, 2, 3])
+    expect(result.extras?.commentBlocks).toMatchObject([
+      { author: '甲', text: '一楼', likeCount: 0 },
+      { author: '乙', text: '二楼' },
+      { author: '丙', text: '三楼', likeCount: 7, replyCount: 2 }
+    ])
+  })
+
+  it('renders embedded game cards with cover, score, and price instead of a bare link', () => {
+    const result = normalizeXiaoheihePost('https://www.xiaoheihe.cn/app/bbs/link/abc123', {
+      status: 'ok',
+      result: {
+        link: {
+          title: '嵌卡帖子',
+          text: JSON.stringify([
+            { type: 'text', text: '开头' },
+            { type: 'html', text: '<img data-gameid="730" data-original="https://img.example.test/card.jpg"/>' }
+          ])
+        }
+      }
+    }, {
+      730: { name: '反恐精英', score: '9.1', scoreComment: 1200, price: '¥70', cover: 'https://img.example.test/cover.jpg' }
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful post result')
+    expect(result.extras?.contentBlocks).toEqual([
+      { type: 'text', text: '开头' },
+      { type: 'image', url: 'https://img.example.test/cover.jpg' },
+      { type: 'text', text: '🎮 反恐精英\n🌟 评分: 9.1 (1200人)\n💰 价格: ¥70' }
+    ])
+  })
+
+  it('falls back to a plain game link when the card payload is unavailable', () => {
+    const result = normalizeXiaoheihePost('https://www.xiaoheihe.cn/app/bbs/link/abc123', {
+      status: 'ok',
+      result: {
+        link: {
+          title: '缺卡片',
+          text: JSON.stringify([
+            { type: 'html', text: '<img data-gameid="730"/>' }
+          ])
+        }
+      }
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful post result')
+    expect(result.extras?.contentBlocks).toEqual([
+      { type: 'text', text: '相关游戏：https://www.xiaoheihe.cn/app/topic/game/pc/730' }
+    ])
   })
 })
 

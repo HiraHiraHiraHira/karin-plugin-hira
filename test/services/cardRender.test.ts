@@ -10,6 +10,7 @@ import {
   buildResolverCardHtml,
   buildStatusCardHtml,
   buildUpdateCardHtml,
+  clearCardRenderCache,
   renderTemplateHtml,
   writeCardHtmlFile,
   renderCardImage
@@ -211,7 +212,7 @@ describe('cardRender', () => {
       author: 'Hira',
       pageUrl: 'https://weibo.com/123/abc',
       images: ['https://img/1.jpg', 'https://img/2.jpg'],
-      videos: ['D:/tmp/video.mp4']
+      videos: [{ url: 'D:/tmp/video.mp4' }]
     })
 
     expect(html).toContain('RESOLVER RESULT')
@@ -235,7 +236,7 @@ describe('cardRender', () => {
       author: 'Hira',
       pageUrl: 'https://www.xiaoheihe.cn/app/bbs/link/abc123',
       images: ['https://img/cover.jpg', 'https://img/a.jpg'],
-      videos: ['https://cdn.example.test/xhh.mp4'],
+      videos: [{ url: 'https://cdn.example.test/xhh.mp4' }],
       extras: {
         tags: ['Steam', 'AI'],
         coverUrl: 'https://img/cover.jpg',
@@ -429,6 +430,33 @@ describe('cardRender', () => {
       type: 'png'
     }))
     expect(result).toEqual([{ type: 'image', file: `base64://${Buffer.from('image-bytes').toString('base64')}` }])
+  })
+
+  it('reuses screenshots for identical html and width', async () => {
+    clearCardRenderCache()
+    const render = vi.fn(async () => Buffer.from('cached-card').toString('base64'))
+    const writeHtml = vi.fn(() => 'D:\\tmp\\cached-card.html')
+    const html = '<main id="container">cached</main>'
+
+    const first = await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
+    const second = await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
+
+    expect(render).toHaveBeenCalledTimes(1)
+    expect(writeHtml).toHaveBeenCalledTimes(1)
+    expect(second).toEqual(first)
+    expect(second[0]?.file).toBe(`base64://${Buffer.from('cached-card').toString('base64')}`)
+  })
+
+  it('keeps cache entries separate for different widths', async () => {
+    clearCardRenderCache()
+    const render = vi.fn(async () => Buffer.from('width-card').toString('base64'))
+    const writeHtml = vi.fn(() => 'D:\\tmp\\width-card.html')
+    const html = '<main id="container">width</main>'
+
+    await renderCardImage({ name: 'status', html, width: 760, writeHtml, render })
+    await renderCardImage({ name: 'status', html, width: 920, writeHtml, render })
+
+    expect(render).toHaveBeenCalledTimes(2)
   })
 
   it('writes card html into Karin html cache like kkk render output', () => {

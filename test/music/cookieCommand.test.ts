@@ -21,6 +21,30 @@ describe('parseMusicCookieCommand', () => {
     })
   })
 
+  it('accepts legacy single-segment cookies and detects the platform', () => {
+    expect(parseMusicCookieCommand('#提交音乐ckMUSIC_U=abc; __csrf=1')).toEqual({
+      type: 'submit',
+      source: 'netease',
+      cookie: 'MUSIC_U=abc; __csrf=1'
+    })
+    expect(parseMusicCookieCommand('#提交音乐ckuin=10001; qm_keyst=secret')).toEqual({
+      type: 'submit',
+      source: 'qq',
+      cookie: 'uin=10001; qm_keyst=secret'
+    })
+    // 浏览器复制常带引号
+    expect(parseMusicCookieCommand('#提交点歌ck "qm_keyst=secret; qqmusic_key=secret"')).toEqual({
+      type: 'submit',
+      source: 'qq',
+      cookie: 'qm_keyst=secret; qqmusic_key=secret'
+    })
+  })
+
+  it('asks for help when no cookie or platform can be recognized', () => {
+    expect(parseMusicCookieCommand('#提交音乐ck')).toEqual({ type: 'help' })
+    expect(parseMusicCookieCommand('#提交音乐ck 未知来源 abc')).toEqual({ type: 'help' })
+  })
+
   it('parses status commands', () => {
     expect(parseMusicCookieCommand('#点歌ck检查')).toEqual({ type: 'status' })
     expect(parseMusicCookieCommand('#音乐cookie状态')).toEqual({ type: 'status' })
@@ -28,8 +52,7 @@ describe('parseMusicCookieCommand', () => {
     expect(parseMusicCookieCommand('#点歌cookie状态')).toEqual({ type: 'status' })
   })
 
-  it('ignores invalid commands and unsupported sources', () => {
-    expect(parseMusicCookieCommand('#提交音乐ck 未知来源 abc')).toEqual({ type: 'none' })
+  it('ignores non cookie commands', () => {
     expect(parseMusicCookieCommand('#点歌 周杰伦')).toEqual({ type: 'none' })
   })
 })

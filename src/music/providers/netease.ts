@@ -3,7 +3,7 @@ import { logger } from 'node-karin'
 import type { MusicItem, MusicPlayable, MusicProvider } from '@/music/types'
 import { fetchJson } from '@/services/http'
 
-import { isPlayableAudioUrl, normalizeDuration, requirePlayableUrl } from './helpers'
+import { isPlayableAudioUrl, normalizeDuration, providerError, requirePlayableUrl } from './helpers'
 import { aggregatorAudioUrl, aggregatorSearch } from './aggregator'
 
 type NeteaseProviderOptions = {
@@ -48,6 +48,14 @@ export class NeteaseProvider implements MusicProvider {
   }
 
   async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
+    try {
+      return await this.searchUnsafe(keyword, page, pageSize)
+    } catch (error) {
+      throw providerError('网易云', error)
+    }
+  }
+
+  private async searchUnsafe(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
     const offset = Math.max(0, page - 1) * pageSize
 
     try {
@@ -122,19 +130,28 @@ export class NeteaseProvider implements MusicProvider {
     }
 
     const url = `${this.baseUrl}/song/url/v1?id=${encodeURIComponent(item.id)}&level=${this.level}`
-    const data = await this.requestJson<{ data?: Array<{ url?: string, level?: string }> }>(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})
+    let data: { data?: Array<{ url?: string, level?: string }> }
+    try {
+      data = await this.requestJson(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})
+    } catch (error) {
+      throw providerError('网易云', error)
+    }
     const playable = data.data?.[0]
+    if (!playable?.url?.trim()) {
+      throw new Error(`网易云：未获取到《${item.title}》的可播放链接（可能需要会员或该歌曲已下架）`)
+    }
 
     return {
       item,
-      audioUrl: requirePlayableUrl(playable?.url),
-      quality: playable?.level
+      audioUrl: requirePlayableUrl(playable.url),
+      quality: playable.level
     }
   }
 
-  async getLyrics(item: MusicItem): Promise<string | undefined> {
+  async getLyrics(item: MusicItem): Promise<string[]> {
     const data = await this.requestJson<{ lrc?: { lyric?: string }, tlyric?: { lyric?: string } }>(`${this.baseUrl}/lyric?id=${encodeURIComponent(item.id)}`)
-    return data.lrc?.lyric || data.tlyric?.lyric
+    // 原文和翻译都给, 发送侧各自转发(云崽行为).
+    return [data.lrc?.lyric, data.tlyric?.lyric].filter((value): value is string => Boolean(value?.trim()))
   }
 
   async checkCookie() {
@@ -173,9 +190,11 @@ export const buildNeteaseHighQualityRequest = (id: string, level = 'exhigh') => 
 })
 
 export const normalizeNeteaseCookieStatus = (payload: unknown) => {
-  const data = payload && typeof payload === 'object' ? payload as { code?: number, profile?: { nickname?: string } } : {}
+  const data = payload && typeof payload === 'object'
+    ? payload as { code?: number, profile?: { nickname?: string }, account?: { vipType?: number } }
+    : {}
   if (data.code === 200 && data.profile?.nickname) {
-    return { ok: true, message: data.profile.nickname }
+    return { ok: true, message: data.profile.nickname, ...(data.account ? { vip: Number(data.account.vipType ?? 0) !== 0 } : {}) }
   }
   return { ok: false, message: 'Cookie 失效或未登录' }
 }

@@ -26,7 +26,7 @@ describe('xiaohongshu resolver helpers', () => {
       author: '作者',
       description: '笔记正文',
       images: ['https://img/a.jpg'],
-      videos: ['https://video/a.mp4'],
+      videos: [{ url: 'https://video/a.mp4' }],
       extras: {
         coverUrl: 'https://img/a.jpg',
         contentBlocks: [
@@ -146,9 +146,9 @@ describe('xiaohongshu resolver helpers', () => {
     expect(result).toMatchObject({
       platform: 'xiaohongshu',
       videos: [
-        'https://sns-bak-v1.xhscdn.com/video.mp4',
-        'https://sns-bak-v6.xhscdn.com/video.mp4',
-        'https://sns-video-v3.xhscdn.com/video.mp4?sign=abc&t=123'
+        { url: 'https://sns-bak-v1.xhscdn.com/video.mp4' },
+        { url: 'https://sns-bak-v6.xhscdn.com/video.mp4' },
+        { url: 'https://sns-video-v3.xhscdn.com/video.mp4?sign=abc&t=123' }
       ]
     })
     expect('ok' in result).toBe(false)

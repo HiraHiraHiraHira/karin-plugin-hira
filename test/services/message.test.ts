@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultConfig } from '@/config/defaults'
 import { Config } from '@/config'
 import type { ResolvedPost } from '@/resolvers/types'
-import { bustImageUrls, nativeMusicCard, replyMusicList, replyResolvedPost, withCacheBuster } from '@/services/message'
+import { clearCardRenderCache } from '@/services/cardRender'
+import { bustImageUrls, nativeMusicCard, replyImage, replyMusicList, replyPlainText, replyResolvedPost, replyText, withCacheBuster } from '@/services/message'
 
 const fsMocks = vi.hoisted(() => ({
   existsSync: vi.fn(() => false),
@@ -18,6 +19,11 @@ const karinMocks = vi.hoisted(() => ({
   render: vi.fn(async () => Buffer.from('music-card').toString('base64'))
 }))
 
+const runtimeMocks = vi.hoisted(() => ({
+  downloadFile: vi.fn(),
+  runFfmpeg: vi.fn()
+}))
+
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -28,6 +34,29 @@ vi.mock('node:fs', async importOriginal => {
     appendFileSync: fsMocks.appendFileSync
   }
 })
+
+vi.mock('@/runtime/downloader', async () => {
+  const fs = await import('node:fs')
+  runtimeMocks.downloadFile.mockImplementation(async (options: { output: string }) => {
+    fs.writeFileSync(options.output, Buffer.alloc(2048))
+    return options.output
+  })
+  return { downloadFile: runtimeMocks.downloadFile }
+})
+
+vi.mock('@/runtime/ffmpeg', async () => {
+  const fs = await import('node:fs')
+  runtimeMocks.runFfmpeg.mockImplementation(async (options: { output: string }) => {
+    fs.writeFileSync(options.output, Buffer.alloc(2048))
+    return options.output
+  })
+  return { runFfmpeg: runtimeMocks.runFfmpeg }
+})
+
+vi.mock('@/services/previewCover', () => ({
+  // 预览卡封面内联需要真实网络; 单元测试只需要它不阻塞发送时序.
+  inlinePreviewCover: async (post: unknown) => post
+}))
 
 vi.mock('node-karin', async importOriginal => {
   const actual = await importOriginal<typeof import('node-karin')>()
@@ -43,7 +72,9 @@ vi.mock('node-karin', async importOriginal => {
 describe('replyResolvedPost', () => {
   afterEach(() => {
     vi.clearAllMocks()
+    clearCardRenderCache()
     fsMocks.existsSync.mockReturnValue(false)
+    fsMocks.statSync.mockReset()
     karinMocks.render.mockReset()
     karinMocks.render.mockResolvedValue(Buffer.from('music-card').toString('base64'))
     defaultConfig.resolver.commentsEnabled = true
@@ -65,7 +96,7 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://www.douyin.com/video/738',
       images: [],
-      videos: [video]
+      videos: [{ url: video }]
     }
     fsMocks.existsSync.mockReturnValue(true)
     fsMocks.statSync.mockReturnValue({ size: 25 * 1024 * 1024 })
@@ -90,7 +121,7 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://www.douyin.com/video/738',
       images: ['https://img/cover.jpg'],
-      videos: ['D:/tmp/douyin.mp4']
+      videos: [{ url: 'D:/tmp/douyin.mp4' }]
     }
 
     await replyResolvedPost(e, post)
@@ -104,7 +135,7 @@ describe('replyResolvedPost', () => {
     expect(calls[1]?.[0]).toMatchObject({ type: 'video', file: 'file://D:/tmp/douyin.mp4' })
   })
 
-  it('keeps remote video urls unchanged when sending resolver videos', async () => {
+  it('downloads remote videos lazily when sending and reuses the prepared local file', async () => {
     const reply = vi.fn(async () => ({}))
     const e = { reply } as unknown as Message
     const post: ResolvedPost = {
@@ -114,13 +145,25 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://example.test/post/1',
       images: [],
-      videos: ['https://cdn.example.test/video.mp4']
+      videos: [{ url: 'https://cdn.example.test/video.mp4' }]
     }
 
     await replyResolvedPost(e, post)
 
     const calls = reply.mock.calls as unknown as Array<[unknown]>
-    expect(calls[1]?.[0]).toEqual({ type: 'video', file: 'https://cdn.example.test/video.mp4' })
+    // 首条回复(卡片)必须先于任何媒体下载; 远程视频下载前会有一条可撤回的占位提示.
+    expect(calls[0]?.[0]).toEqual([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
+    ])
+    expect(calls[1]?.[0]).toContain('视频下载中')
+    expect(reply.mock.invocationCallOrder[0]).toBeLessThan(runtimeMocks.downloadFile.mock.invocationCallOrder[0] as number)
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://cdn.example.test/video.mp4',
+      headers: expect.objectContaining({ Referer: 'https://example.test/' })
+    }))
+    const videoPayload = calls.at(-1)?.[0] as { type: string, file: string }
+    expect(videoPayload.type).toBe('video')
+    expect(videoPayload.file).toMatch(/^file:\/\/.*\.mp4$/)
   })
 
   it('does not add the configured reply prefix to resolver result messages', async () => {
@@ -183,6 +226,7 @@ describe('replyResolvedPost', () => {
     ])
 
     vi.clearAllMocks()
+    clearCardRenderCache()
     karinMocks.render.mockRejectedValueOnce(new Error('render offline'))
 
     await replyResolvedPost(e, {
@@ -192,7 +236,7 @@ describe('replyResolvedPost', () => {
       reason: '接口返回 403'
     })
 
-    expect(reply).toHaveBeenCalledWith('微博解析失败：接口返回 403')
+    expect(reply).toHaveBeenCalledWith('微博解析失败：接口返回 403', { reply: true })
   })
 
   it('sends Xiaohongshu rich notes as card first and forwards body content after it', async () => {
@@ -221,7 +265,7 @@ describe('replyResolvedPost', () => {
       description: '图集简介',
       pageUrl: 'https://www.xiaohongshu.com/explore/123',
       images: ['https://img/1.jpg', 'https://img/2.jpg'],
-      videos: ['https://video/xhs.mp4'],
+      videos: [{ url: 'https://video/xhs.mp4' }],
       extras: {
         coverUrl: 'https://img/1.jpg',
         contentBlocks: [
@@ -266,7 +310,7 @@ describe('replyResolvedPost', () => {
       { type: 'image', file: 'https://img/2.jpg' }
     ])
     const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
-    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/xhs.mp4' })
+    expect(replyCalls.at(-1)?.[0]).toMatchObject({ type: 'video', file: expect.stringMatching(/^file:\/\/.*\.mp4$/) })
   })
 
   it('deduplicates repeated rich content images before sending fake forwards', async () => {
@@ -409,7 +453,7 @@ describe('replyResolvedPost', () => {
       description: '视频正文',
       pageUrl: 'https://www.xiaohongshu.com/explore/123',
       images: ['https://img/cover.jpg'],
-      videos: ['https://video/xhs-expired.mp4'],
+      videos: [{ url: 'https://video/xhs-expired.mp4' }],
       extras: {
         coverUrl: 'https://img/cover.jpg',
         contentBlocks: [
@@ -455,7 +499,7 @@ describe('replyResolvedPost', () => {
       description: '摘要',
       pageUrl: 'https://www.xiaoheihe.cn/app/bbs/link/abc123',
       images: ['https://img/cover.jpg'],
-      videos: ['https://cdn.example.test/xhh.mp4'],
+      videos: [{ url: 'https://cdn.example.test/xhh.mp4' }],
       extras: {
         contentBlocks: [
           { type: 'text', text: '正文第一段' },
@@ -523,7 +567,7 @@ describe('replyResolvedPost', () => {
     expect(secondForwardNodes[0]).toMatchObject({
       type: 'node',
       subType: 'fake',
-      userId: '1',
+      userId: '10001',
       nickname: '路人'
     })
     expect(secondForwardNodes[0]?.message).toEqual([
@@ -531,7 +575,7 @@ describe('replyResolvedPost', () => {
       { type: 'image', file: 'https://img/comment.jpg' }
     ])
     const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
-    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://cdn.example.test/xhh.mp4' })
+    expect(replyCalls.at(-1)?.[0]).toMatchObject({ type: 'video', file: expect.stringMatching(/^file:\/\/.*\.mp4$/) })
   })
 
   it('sends Weibo rich posts with the shared preview card and fake forwards', async () => {
@@ -728,7 +772,7 @@ describe('replyResolvedPost', () => {
       description: '正文摘要',
       pageUrl: 'https://tieba.baidu.com/p/123',
       images: ['https://img/cover.jpg'],
-      videos: ['https://video/tieba.mp4'],
+      videos: [{ url: 'https://video/tieba.mp4' }],
       extras: {
         contentBlocks: [
           { type: 'text', text: '楼主正文' },
@@ -765,7 +809,7 @@ describe('replyResolvedPost', () => {
       })
     )
     const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
-    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: 'https://video/tieba.mp4' })
+    expect(replyCalls.at(-1)?.[0]).toMatchObject({ type: 'video', file: expect.stringMatching(/^file:\/\/.*\.mp4$/) })
   })
 
   it.each([
@@ -799,7 +843,7 @@ describe('replyResolvedPost', () => {
       author: '作者',
       pageUrl: `https://example.test/${platform}/1`,
       images: ['https://img/cover.jpg'],
-      videos: [`https://video/${platform}.mp4`],
+      videos: [{ url: `https://video/${platform}.mp4` }],
       extras: {
         coverUrl: 'https://img/cover.jpg',
         authorAvatar: 'https://img/avatar.jpg',
@@ -833,7 +877,7 @@ describe('replyResolvedPost', () => {
       { type: 'image', file: 'https://img/cover.jpg' }
     ])
     const replyCalls = reply.mock.calls as unknown as Array<[unknown]>
-    expect(replyCalls.at(-1)?.[0]).toEqual({ type: 'video', file: `https://video/${platform}.mp4` })
+    expect(replyCalls.at(-1)?.[0]).toMatchObject({ type: 'video', file: expect.stringMatching(/^file:\/\/.*\.mp4$/) })
   })
 
   it('sends long resolver descriptions as a merged forward message', async () => {
@@ -890,7 +934,7 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://example.test/post/1',
       images: [],
-      videos: ['https://cdn.example.test/expired.mp4']
+      videos: [{ url: 'https://cdn.example.test/expired.mp4' }]
     }
 
     await replyResolvedPost(e, post)
@@ -917,7 +961,7 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://www.bilibili.com/video/BV1',
       images: ['https://img/cover.jpg'],
-      videos: [video]
+      videos: [{ url: video }]
     }
     fsMocks.existsSync.mockReturnValue(true)
     fsMocks.statSync.mockReturnValue({ size: 101 * 1024 * 1024 })
@@ -953,7 +997,7 @@ describe('replyResolvedPost', () => {
       description: '简介',
       pageUrl: 'https://www.bilibili.com/video/BV1',
       images: ['https://img/cover.jpg'],
-      videos: [video]
+      videos: [{ url: video }]
     }
     fsMocks.existsSync.mockReturnValue(true)
     fsMocks.statSync.mockReturnValue({ size: 355 * 1024 * 1024 })
@@ -997,6 +1041,119 @@ describe('replyResolvedPost', () => {
     expect(reply).toHaveBeenCalledWith([
       { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` }
     ])
+  })
+
+  it('merges a separate audio track before sending resolve videos', async () => {
+    const reply = vi.fn(async (_payload?: unknown) => ({}) as unknown)
+    const e = { reply } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'bilibili',
+      displayName: '哔哩哔哩',
+      title: 'DASH 视频',
+      description: '简介',
+      pageUrl: 'https://www.bilibili.com/video/BV1',
+      images: [],
+      videos: [{
+        url: 'https://cdn.example.test/video.m4s',
+        audioUrl: 'https://cdn.example.test/audio.m4s'
+      }]
+    }
+
+    await replyResolvedPost(e, post)
+
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledTimes(2)
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://cdn.example.test/audio.m4s'
+    }))
+    expect(runtimeMocks.runFfmpeg).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'merge',
+      videoInput: expect.any(String),
+      audioInput: expect.any(String)
+    }))
+    const lastFfmpeg = runtimeMocks.runFfmpeg.mock.calls.at(-1)?.[0] as { output: string }
+    const videoPayload = reply.mock.calls.at(-1)?.[0] as { type: string, file: string }
+    expect(videoPayload.type).toBe('video')
+    expect(videoPayload.file).toContain(lastFfmpeg.output.replace(/\\/g, '/'))
+  })
+
+  it('sends disjoint douyin clip and image sets without further dedupe', async () => {
+    const reply = vi.fn(async (_payload?: unknown) => ({}) as unknown)
+    const e = { reply } as unknown as Message
+    const post: ResolvedPost = {
+      platform: 'douyin',
+      displayName: '抖音',
+      title: '图集笔记',
+      description: '简介',
+      pageUrl: 'https://www.douyin.com/note/123',
+      images: ['https://img.example.test/cover.jpg', 'https://img.example.test/still.jpg'],
+      videos: [
+        { url: 'https://cdn.example.test/clip1.mp4', audioUrl: 'https://cdn.example.test/bgm1.mp3' },
+        // 原声图集没有 audioUrl, 仍必须按视频发送.
+        { url: 'https://cdn.example.test/clip2.mp4' }
+      ]
+    }
+
+    await replyResolvedPost(e, post)
+
+    const firstPayload = reply.mock.calls[0]?.[0] as Array<{ type?: string, file?: string }>
+    expect(firstPayload).toEqual([
+      { type: 'image', file: `base64://${Buffer.from('music-card').toString('base64')}` },
+      { type: 'image', file: 'https://img.example.test/cover.jpg' },
+      { type: 'image', file: 'https://img.example.test/still.jpg' }
+    ])
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://cdn.example.test/clip1.mp4',
+      headers: expect.objectContaining({ Referer: 'https://www.douyin.com/note/123' })
+    }))
+    const videoCalls = (reply.mock.calls as unknown as Array<[unknown]>).filter(([payload]) => (
+      typeof payload === 'object' && payload !== null && 'type' in payload && payload.type === 'video'
+    ))
+    expect(videoCalls).toHaveLength(2)
+  })
+
+  it('retries failed image sends with a locally downloaded copy', async () => {
+    let attempts = 0
+    const reply = vi.fn(async (_payload?: unknown) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('risk control')
+      return { messageId: 'ok' }
+    })
+    const e = { reply } as unknown as Message
+    fsMocks.statSync.mockReturnValue({ size: 2048 })
+
+    await replyImage(e, 'https://img.example.test/a.jpg', '标题')
+
+    expect(runtimeMocks.downloadFile).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://img.example.test/a.jpg',
+      headers: expect.objectContaining({ Referer: 'https://img.example.test/' })
+    }))
+    expect(reply).toHaveBeenCalledTimes(2)
+    const retried = reply.mock.calls[1]?.[0] as Array<{ type?: string, file?: string }>
+    expect(retried[1]).toMatchObject({ type: 'image' })
+    expect(retried[1]?.file).toMatch(/\.jpg$/)
+    expect(retried[1]?.file).not.toMatch(/^https?:/)
+  })
+})
+
+describe('reply text helpers', () => {
+  it('quotes the triggering message by default and supports opting out', async () => {
+    const reply = vi.fn(async () => ({}))
+    const e = { reply } as unknown as Message
+
+    await replyText(e, '交互回复')
+    expect(reply).toHaveBeenLastCalledWith('Hira：交互回复', { reply: true })
+
+    await replyText(e, '裸消息', { reply: false })
+    expect(reply).toHaveBeenLastCalledWith('Hira：裸消息', { reply: false })
+  })
+
+  it('supports auto recall for temporary placeholders', async () => {
+    const reply = vi.fn(async () => ({}))
+    const e = { reply } as unknown as Message
+
+    await replyPlainText(e, '语音上传中…', { recallMsg: 30 })
+
+    expect(reply).toHaveBeenCalledWith('语音上传中…', { reply: true, recallMsg: 30 })
   })
 })
 

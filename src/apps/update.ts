@@ -493,12 +493,11 @@ export const handleHiraUpdateReply = async (e: Message, next?: HookNext) => {
 export const hiraUpdateHook = hooks.message.friend(handleHiraUpdateReply, { priority: 100 })
 
 export const hiraUpdateCommand = karin.command(updateReg, async (e, next) => {
-  if (!isHiraAppEnabled()) return next?.()
+  if (!isHiraAppEnabled() || !e.isMaster) return next?.()
   await handleHiraUpdate(e)
   return true
 }, {
-  name: 'Hira-更新',
-  perm: 'master'
+  name: 'Hira-更新'
 })
 
 export const update = karin.task('hira-更新检测', '*/3 * * * *', checkAndNotifyUpdate, {

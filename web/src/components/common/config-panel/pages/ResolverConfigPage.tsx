@@ -35,8 +35,8 @@ const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: Config
       ))}
       {renderSubSection('平台开关', (
         <>
-          {renderSwitch(['resolver', 'platforms', 'bilibili'], 'B站', '关闭后 B站链接交还给后续插件或 Karin 默认流程。')}
-          {renderSwitch(['resolver', 'platforms', 'douyin'], '抖音', '抖音视频仅保留诊断和降级，不在本轮深修。')}
+          {renderSwitch(['resolver', 'platforms', 'bilibili'], 'B站', '开启后解析 B站视频、番剧、直播间信息、动态和专栏；关闭后链接交还给后续插件或 Karin 默认流程。')}
+          {renderSwitch(['resolver', 'platforms', 'douyin'], '抖音', '开启后解析抖音视频、图集动图和直播间（直播仅展示标题、封面和在线人数）。')}
           {renderSwitch(['resolver', 'platforms', 'kuaishou'], '快手', '开启后快手链接使用通用接口兜底解析。')}
           {renderSwitch(['resolver', 'platforms', 'weibo'], '微博', '开启后自动解析微博分享。')}
           {renderSwitch(['resolver', 'platforms', 'tieba'], '贴吧', '开启后自动解析贴吧帖子和分享卡。')}
@@ -67,8 +67,8 @@ const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: Config
       {renderSubSection('B站视频', (
         <>
           {renderTextField(['resolver', 'bilibili', 'maxVideoDurationSeconds'], '下载上限（分钟）', '超过上限仅返回视频信息；0 表示不限制。', minuteOptions)}
-          {renderSelectField(['resolver', 'bilibili', 'quality'], '下载画质', '控制 B站视频下载的最高画质。', bilibiliQualityOptions, Number)}
-          {renderSelectField(['resolver', 'bilibili', 'codec'], '视频编码', '自动模式优先选择更省体积的现代编码。', bilibiliCodecOptions)}
+          {renderSelectField(['resolver', 'bilibili', 'quality'], '下载画质', '控制 B站视频拉流的最高画质；请求会自动带上 AV1/4K/HDR/杜比对应的 DASH 标志。', bilibiliQualityOptions, Number)}
+          {renderSelectField(['resolver', 'bilibili', 'codec'], '视频编码', '自动模式优先 AV1，其次 HEVC、AVC；实际可用编码取决于账号与画质。', bilibiliCodecOptions)}
         </>
       ))}
       {renderSubSection('抖音视频', (

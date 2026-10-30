@@ -200,26 +200,54 @@ export const extractWeiboStatusFromDetailHtml = (html: string) => {
   return parseJsonObjectFrom(html, colon + 1)
 }
 
-export const normalizeWeiboComments = (payload: unknown) => {
-  const root = payload as { data?: { data?: Array<{ user?: { screen_name?: string }, text?: string }> } }
-  return (root.data?.data ?? []).slice(0, 5).map(comment => {
-    const user = comment.user?.screen_name || '匿名用户'
-    const text = stripHtml(comment.text || '')
-    return text ? `${user}：${text}` : ''
-  }).filter(Boolean)
+/** 微博评论接口的 like_count / total_number 常是字符串或缺失，统一成数字，缺失返回 undefined 让渲染层跳过。 */
+const commentCount = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number.parseInt(value.trim(), 10)
+  return undefined
 }
 
-const weiboCommentBlocks = (comments: string[]): RichCommentBlock[] => comments.map(comment => {
-  const separator = comment.indexOf('：')
-  if (separator <= 0) return { author: '匿名用户', text: comment, images: [] }
-  return {
-    author: comment.slice(0, separator),
-    text: comment.slice(separator + 1),
-    images: []
-  }
-}).filter(comment => comment.text)
+const formatCommentTime = (value: unknown) => {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return undefined
+  const date = new Date(text)
+  if (Number.isNaN(date.getTime())) return text
+  const pad = (part: number) => String(part).padStart(2, '0')
+  return `${String(date.getFullYear()).slice(2)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
-export const normalizeWeiboStatus = (url: string, status: Record<string, any>, comments: string[] = []): ResolvedPost => {
+/** R 插件取 hotflow 前 20 条并展示点赞数、时间和来源；这里同样保留三条元数据，交给发送侧渲染。 */
+export const normalizeWeiboComments = (payload: unknown): RichCommentBlock[] => {
+  const root = payload as { data?: { data?: Array<Record<string, any>> } }
+  return (root.data?.data ?? []).slice(0, 20).flatMap(comment => {
+    const text = stripHtml(String(comment.text || ''))
+    if (!text) return []
+    const block: RichCommentBlock = {
+      author: comment.user?.screen_name || '匿名用户',
+      text,
+      images: []
+    }
+    const likeCount = commentCount(comment.like_count)
+    if (likeCount !== undefined) block.likeCount = likeCount
+    const replyCount = commentCount(comment.total_number)
+    if (replyCount !== undefined) block.replyCount = replyCount
+    const time = formatCommentTime(comment.created_at)
+    if (time) block.time = time
+    const source = firstString(comment.source)
+    if (source) block.location = source
+    return [block]
+  })
+}
+
+/** 卡片摘要里最多列 10 条评论；完整 20 条仍通过 commentBlocks 由发送侧单独转发。 */
+const MAX_INLINE_COMMENT_LINES = 10
+
+const weiboCommentLines = (comments: RichCommentBlock[]) => comments.slice(0, MAX_INLINE_COMMENT_LINES).map(comment => {
+  const like = comment.likeCount ? ` (👍${comment.likeCount})` : ''
+  return `${comment.author}：${comment.text}${like}`
+})
+
+export const normalizeWeiboStatus = (url: string, status: Record<string, any>, comments: RichCommentBlock[] = []): ResolvedPost => {
   const retweetedStatus = asObject(status.retweeted_status)
   const pics = [
     ...weiboPicUrls(status),
@@ -230,6 +258,8 @@ export const normalizeWeiboStatus = (url: string, status: Record<string, any>, c
   const pageUrl = status.bid ? `https://weibo.com/${status.user?.id || ''}/${status.bid}` : url
   const video = weiboVideoUrl(status) || weiboVideoUrl(retweetedStatus)
   const text = statusText(status)
+  // 头条文章类微博的正文只有「发布了头条文章」，真正的标题在 status_title 里，R 插件单独展示这一行。
+  const statusTitle = firstString(status.status_title) || ''
   const retweetedText = statusText(retweetedStatus)
   const retweetedAuthor = retweetedStatus?.user?.screen_name
   const retweetedLine = retweetedStatus
@@ -238,19 +268,20 @@ export const normalizeWeiboStatus = (url: string, status: Record<string, any>, c
   const meta = [status.source, status.region_name].filter(Boolean).join('\t')
   const description = [
     text,
+    statusTitle,
     retweetedLine,
     meta,
-    comments.length > 0 ? `热门评论\n${comments.join('\n')}` : ''
+    comments.length > 0 ? `热门评论\n${weiboCommentLines(comments).join('\n')}` : ''
   ].filter(Boolean).join('\n\n')
   const contentBlocks: RichContentBlock[] = [
     text ? { type: 'text', text } : undefined,
+    statusTitle && statusTitle !== text ? { type: 'text', text: statusTitle } : undefined,
     retweetedLine ? { type: 'text', text: retweetedLine } : undefined,
     ...pics.map(url => ({ type: 'image' as const, url }))
   ].filter(Boolean) as RichContentBlock[]
-  const commentBlocks = weiboCommentBlocks(comments)
   const extras: ResolvedPost['extras'] = {
     contentBlocks,
-    commentBlocks
+    commentBlocks: comments
   }
   if (coverUrl) extras.coverUrl = coverUrl
   const authorAvatar = weiboAuthorAvatar(status)
@@ -262,11 +293,11 @@ export const normalizeWeiboStatus = (url: string, status: Record<string, any>, c
   return {
     platform: 'weibo',
     displayName: '微博',
-    title: text.slice(0, 60),
+    title: statusTitle || text.slice(0, 60),
     description,
     author: status.user?.screen_name,
     pageUrl,
-    videos: video ? [video] : [],
+    videos: video ? [{ url: video }] : [],
     images: pics,
     extras
   }
@@ -286,6 +317,42 @@ const enrichWeiboLongText = async (
     return longTextContent ? { ...status, longTextContent } : status
   } catch {
     return status
+  }
+}
+
+const voteImagePattern = /https?:\/\/wx\d\.sinaimg\.cn\/[a-z0-9]+\/[^"'\s]+?\.jpg/gi
+
+/** 投票帖正文没有图片，只有桌面版页面的 HTML 里才有选项图；R 插件同样从这里兜底。 */
+export const extractWeiboVoteImages = (html: string) => {
+  const images: string[] = []
+  for (const match of html.matchAll(voteImagePattern)) {
+    const url = match[0]
+    if (!/\/(?:bmiddle|large|mw2000|orj\d*)\//.test(url)) continue
+    // mw2000/orj 需要登录，统一换成可匿名访问的 large。
+    const normalized = url.replace(/\/bmiddle\//, '/large/').replace(/\/mw2000\//, '/large/').replace(/\/orj\d*\//, '/large/')
+    if (!images.includes(normalized)) images.push(normalized)
+    if (images.length >= 10) break
+  }
+  return images
+}
+
+/** 桌面版页面拿不到时再退回 ajax 接口，只从返回的 JSON 文本里捞 sinaimg 大图。 */
+const fetchWeiboVoteImages = async (uid: string, id: string, headers: Record<string, string>) => {
+  if (uid) {
+    try {
+      const html = await fetchResolverText(`https://weibo.com/${encodeURIComponent(uid)}/${encodeURIComponent(id)}`, { headers })
+      const images = extractWeiboVoteImages(html)
+      if (images.length > 0) return images
+    } catch {
+      // 继续尝试 ajax 接口。
+    }
+  }
+
+  try {
+    const payload = await fetchResolverJson(`https://weibo.com/ajax/statuses/show?id=${encodeURIComponent(id)}`, { headers })
+    return extractWeiboVoteImages(JSON.stringify(payload).replace(/\\\//g, '/'))
+  } catch {
+    return []
   }
 }
 
@@ -315,7 +382,7 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
     const requestId = weiboStatusRequestId(status, id)
     status = await enrichWeiboLongText(requestId, status, headers)
 
-    let comments: string[] = []
+    let comments: RichCommentBlock[] = []
     try {
       const commentData = await fetchResolverJson(`https://m.weibo.cn/comments/hotflow?id=${encodeURIComponent(requestId)}&mid=${encodeURIComponent(requestId)}&max_id_type=0`, {
         headers: { ...headers, 'X-Requested-With': 'XMLHttpRequest' }
@@ -325,7 +392,24 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
       comments = []
     }
 
-    return normalizeWeiboStatus(url, status, comments)
+    const result = normalizeWeiboStatus(url, status, comments)
+    // 投票帖既没图也没视频时，从桌面版页面/接口兜底取选项图（R tools.js 的投票图片分支）。
+    if (result.images.length === 0 && result.videos.length === 0) {
+      const uid = String(status.user?.id || status.user?.idstr || '')
+      const voteImages = await fetchWeiboVoteImages(uid, requestId, headers)
+      if (voteImages.length > 0) {
+        result.images = voteImages
+        result.extras = {
+          ...result.extras,
+          contentBlocks: [
+            ...(result.extras?.contentBlocks ?? []),
+            ...voteImages.map(image => ({ type: 'image' as const, url: image }))
+          ]
+        }
+      }
+    }
+
+    return result
   } catch {
     // 接口失败时只能退回页面标题；页面也拿不到就明确报错，不要发一条空卡片冒充解析成功。
     try {

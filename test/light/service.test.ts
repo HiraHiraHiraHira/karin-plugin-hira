@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getCatImages, queryMedicine, querySoftware } from '@/light/service'
+import { getBuyerShowImage, getCatImages, getTiredImages, queryMedicine, querySoftware } from '@/light/service'
 
 const configMock = vi.hoisted(() => ({
   light: {
@@ -135,8 +135,8 @@ describe('queryMedicine', () => {
     const [url, options] = httpMock.fetchJson.mock.calls[0]
     expect(String(url)).toBe('https://server.dayi.org.cn/api/search?keyword=%E9%98%BF%E8%8E%AB%E8%A5%BF%E6%9E%97&pageNo=1&pageSize=10')
     expect(options).toEqual({ insecure: true })
-    if (result.type !== 'text') throw new Error('期望文本结果')
-    expect(result.text).toContain('阿莫西林 - 胶囊')
+    if (result.type !== 'forward') throw new Error('期望合并转发结果')
+    expect(result.lines[0]).toBe('📌 阿莫西林 - 胶囊\n📝 简介：抗生素')
   })
 
   it('其他 host 正常校验证书，非 dayi 结构回落到通用列表解析', async () => {
@@ -150,5 +150,103 @@ describe('queryMedicine', () => {
     expect(options).toEqual({})
     if (result.type !== 'text') throw new Error('期望文本结果')
     expect(result.text).toContain('布洛芬')
+  })
+
+  it('允许空关键词（R query.js doctor 原样请求全部）', async () => {
+    configMock.light.medicineApi = 'https://server.dayi.org.cn/api/search?keyword={keyword}&pageNo=1&pageSize=10'
+    httpMock.fetchJson.mockResolvedValue({ list: [{ title: '阿莫西林', secondTitle: '胶囊', introduction: '抗生素' }] })
+
+    const result = await queryMedicine('')
+
+    expect(String(httpMock.fetchJson.mock.calls[0][0])).toContain('keyword=&pageNo=1')
+    expect(result.type).toBe('forward')
+  })
+
+  it('空列表给出未找到提示', async () => {
+    configMock.light.medicineApi = 'https://server.dayi.org.cn/api/search?keyword={keyword}'
+    httpMock.fetchJson.mockResolvedValue({ list: [] })
+
+    const result = await queryMedicine('不存在的药')
+
+    if (result.type !== 'text') throw new Error('期望文本结果')
+    expect(result.text).toBe('未找到相关医药信息')
+  })
+})
+
+describe('getTiredImages', () => {
+  beforeEach(() => {
+    httpMock.fetchJson.mockReset()
+    configMock.light.tiredApis = ['https://imgapi.test/cos2.php?return=jsonpro', 'https://imgapi.test/cos.php?return=jsonpro']
+  })
+
+  it('合并 imgapi 两个 cos 源的 imgurls 并去重', async () => {
+    // 死源已换成 imgapi：响应是 {imgurls: []}，不再是 vvhan 的 {data: [...]}。
+    httpMock.fetchJson.mockImplementation(async (url: string) => {
+      if (url.includes('cos2')) return { code: 200, imgurls: ['https://img.test/1.jpg', 'https://img.test/2.jpg'] }
+      return { code: 200, imgurls: ['https://img.test/2.jpg', 'https://img.test/3.jpg'] }
+    })
+
+    await expect(getTiredImages()).resolves.toEqual([
+      'https://img.test/1.jpg',
+      'https://img.test/2.jpg',
+      'https://img.test/3.jpg'
+    ])
+  })
+
+  it('单个图源失败时保留另一个源的结果', async () => {
+    httpMock.fetchJson.mockImplementation(async (url: string) => {
+      if (url.includes('cos2')) throw new Error('HTTP 500')
+      return { code: 200, imgurls: ['https://img.test/only.jpg'] }
+    })
+
+    await expect(getTiredImages()).resolves.toEqual(['https://img.test/only.jpg'])
+  })
+
+  it('全部失败时抛出可读错误', async () => {
+    httpMock.fetchJson.mockRejectedValue(new Error('HTTP 500'))
+
+    await expect(getTiredImages()).rejects.toThrow('累了接口暂时不可用')
+  })
+})
+
+describe('getBuyerShowImage', () => {
+  beforeEach(() => {
+    httpMock.fetchJson.mockReset()
+    configMock.light.buyerShowApis = ['https://api.suyanw.test/api/tbmjx.php?return=json']
+  })
+
+  it('解析 suyanw 的 {imgurl} 响应', async () => {
+    httpMock.fetchJson.mockResolvedValue({ code: 200, imgurl: 'https://img.test/buyer.jpg' })
+
+    await expect(getBuyerShowImage()).resolves.toEqual({
+      type: 'image',
+      title: '买家秀',
+      url: 'https://img.test/buyer.jpg'
+    })
+  })
+})
+
+describe('querySoftware 裸命令', () => {
+  beforeEach(() => {
+    httpMock.fetchJson.mockReset()
+    configMock.light.softwareApi = ''
+  })
+
+  it('无关键词时返回全部榜单并带上下载地址（R query.js softwareRecommended）', async () => {
+    httpMock.fetchJson.mockImplementation(async (url: string) => {
+      if (url.endsWith('n=pc')) {
+        return { data: { list: [{ title: '微信', url: 'https://ghxi.test/wechat' }] } }
+      }
+      return { data: { list: [{ title: 'QQ', url: 'https://ghxi.test/qq' }] } }
+    })
+
+    const result = await querySoftware('')
+
+    if (result.type !== 'forward') throw new Error('期望合并转发结果')
+    expect(result.title).toBe('推荐软件')
+    expect(result.lines).toEqual([
+      '推荐软件：微信\n地址：https://ghxi.test/wechat',
+      '推荐软件：QQ\n地址：https://ghxi.test/qq'
+    ])
   })
 })

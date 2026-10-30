@@ -52,7 +52,7 @@ bilibili:
   # B站下载上限，单位秒；WebUI 中按分钟填写；0 表示不限制
   maxVideoDurationSeconds: 480
   # 下载画质 qn：16=360P，32=480P，64=720P，80=1080P，112=1080P+，116=1080P60，120=4K
-  quality: 64
+  quality: 112
   # 视频编码：auto=优先现代编码并在同等条件下选择低码率，avc=H.264兼容最好，hevc=H.265，av1=AV1
   codec: auto
 

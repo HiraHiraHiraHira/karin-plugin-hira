@@ -230,7 +230,7 @@ export const createWebConfigComponents = (): ComponentConfig[] => {
           children: [
             createSwitch('lightEnabled', '启用轻量命令', config.light.enabled, '开启后响应猫图、买家秀、医药查询等轻量命令。'),
             createSwitch('translateEnabled', '启用翻译', config.translate.enabled, '开启后响应翻中、翻英、翻日等翻译命令。'),
-            createOptionalStringInput('translateDeeplxApi', 'DeepLX API', config.translate.deeplxApi, '可选，留空时不使用 DeepLX。'),
+            createOptionalStringInput('translateDeeplxApi', 'DeepLX API', config.translate.deeplxApi, '可选，留空时不使用 DeepLX；支持逗号分隔多个镜像，随机选取。'),
             createSwitch('aiSummaryEnabled', '启用网页总结', config.ai.summaryEnabled, '开启后可使用网页总结命令。'),
             input.string('aiApiBaseUrl', { label: 'AI API 地址', description: '兼容 OpenAI 接口格式的 API 地址。', defaultValue: config.ai.apiBaseUrl }),
             input.string('aiModel', { label: '总结模型', description: '用于网页总结的模型名称。', defaultValue: config.ai.model }),

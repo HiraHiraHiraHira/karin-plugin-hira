@@ -5,7 +5,7 @@ import { Config } from '@/config'
 
 const execFileAsync = promisify(execFile)
 
-export type FfmpegFormat = 'mp3' | 'voice' | 'copy' | 'merge' | 'qq-video'
+export type FfmpegFormat = 'mp3' | 'voice' | 'wav' | 'copy' | 'merge' | 'qq-video'
 
 export type FfmpegBuildOptions =
   | {
@@ -68,6 +68,23 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
       '128k',
       '-movflags',
       '+faststart',
+      options.output
+    ]
+  }
+
+  if (options.format === 'wav') {
+    // silk 编码器只吃 WAV: 单声道 24k 与 QQ 语音采样率一致, 免二次重采样.
+    return [
+      '-y',
+      '-i',
+      options.input,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '24000',
+      '-codec:a',
+      'pcm_s16le',
       options.output
     ]
   }

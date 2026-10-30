@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseTranslateCommand, parseTranslateTargetOnly } from '@/translate/commandParser'
+import {
+  parseTranslateCommand,
+  parseTranslateTargetOnly,
+  translateCommandReg
+} from '@/translate/commandParser'
 
 describe('parseTranslateCommand', () => {
   it('parses target language aliases', () => {
@@ -27,5 +31,18 @@ describe('parseTranslateCommand', () => {
     expect(parseTranslateTargetOnly('trans文言文')).toBe('wyw')
     expect(parseTranslateTargetOnly('#翻英')).toBe('en')
     expect(parseTranslateCommand('#trans英 你好')).toEqual({ type: 'translate', target: 'en', text: '你好' })
+  })
+
+  it('支持目标语言后不带空格的写法（R tools.js 切片语义）', () => {
+    expect(parseTranslateCommand('翻中hello')).toEqual({ type: 'translate', target: 'zh', text: 'hello' })
+    expect(parseTranslateCommand('翻英hello world')).toEqual({ type: 'translate', target: 'en', text: 'hello world' })
+    expect(parseTranslateCommand('#trans日你好')).toEqual({ type: 'translate', target: 'ja', text: '你好' })
+    expect(parseTranslateCommand('翻中文hello')).toEqual({ type: 'translate', target: 'zh', text: 'hello' })
+  })
+
+  it('入口正则只认命令词，切分交给 parse*', () => {
+    expect(translateCommandReg.test('翻中hello')).toBe(true)
+    expect(translateCommandReg.test('#trans英你好')).toBe(true)
+    expect(translateCommandReg.test('今天天气')).toBe(false)
   })
 })

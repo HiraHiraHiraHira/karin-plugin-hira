@@ -106,6 +106,43 @@ describe('parseMusicCommand', () => {
     expect(parseMusicCommand('#点歌ck检查')).toEqual({ type: 'none' })
   })
 
+  it('returns an empty-keyword search for bare point-song commands (usage help)', () => {
+    expect(parseMusicCommand('#点歌')).toEqual({
+      type: 'search',
+      keyword: '',
+      source: undefined,
+      listMode: false
+    })
+    expect(parseMusicCommand('#QQ点歌')).toEqual({
+      type: 'search',
+      keyword: '',
+      source: 'qq',
+      listMode: false
+    })
+  })
+
+  it('parses QQ personalized commands', () => {
+    expect(parseMusicCommand('#每日推荐')).toEqual({ type: 'dailyRecommend' })
+    expect(parseMusicCommand('#日推')).toEqual({ type: 'dailyRecommend' })
+    expect(parseMusicCommand('每日30首')).toEqual({ type: 'dailyRecommend' })
+    expect(parseMusicCommand('#个性电台')).toEqual({ type: 'radio' })
+    expect(parseMusicCommand('#我的收藏')).toEqual({ type: 'favorites' })
+    expect(parseMusicCommand('#我喜欢的歌 3')).toEqual({ type: 'favorites', page: 3 })
+    expect(parseMusicCommand('#QQ我的收藏')).toEqual({ type: 'favorites' })
+  })
+
+  it('parses random song requests instead of searching for the keyword 歌', () => {
+    expect(parseMusicCommand('#来首歌')).toEqual({ type: 'random' })
+    expect(parseMusicCommand('来一首歌')).toEqual({ type: 'random' })
+    expect(parseMusicCommand('放首歌')).toEqual({ type: 'random' })
+    expect(parseMusicCommand('放一首歌')).toEqual({ type: 'random' })
+  })
+
+  it('parses quoted music card download commands', () => {
+    expect(parseMusicCommand('#下载音乐')).toEqual({ type: 'download' })
+    expect(parseMusicCommand('下载音乐')).toEqual({ type: 'download' })
+  })
+
   it('parses next page, lyrics, and voice commands', () => {
     expect(parseMusicCommand('#下一页')).toEqual({ type: 'nextPage' })
     expect(parseMusicCommand('#歌词')).toEqual({ type: 'lyrics' })

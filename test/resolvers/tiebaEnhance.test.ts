@@ -59,6 +59,51 @@ describe('normalizeTiebaPost', () => {
     ])
   })
 
+  it('sends every tieba floor instead of stopping at five', () => {
+    const posts = Array.from({ length: 8 }, (_, index) => ({
+      author: { name: `层主${index + 2}` },
+      floor: index + 2,
+      content: `<p>第 ${index + 2} 楼</p>`,
+      like_count: index,
+      reply_num: index * 2
+    }))
+
+    const result = normalizeTiebaPost('https://tieba.baidu.com/p/123', {
+      thread: { title: '长贴', author: { name: '楼主' }, content: '<p>正文</p>' },
+      posts
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.extras?.commentBlocks).toHaveLength(8)
+    expect(result.extras?.commentBlocks?.[7]).toMatchObject({
+      author: '层主9',
+      floor: 9,
+      text: '第 9 楼',
+      likeCount: 7,
+      replyCount: 14
+    })
+    expect(result.description).toContain('第 9 楼')
+  })
+
+  it('caps ultra-long tieba threads at thirty floors', () => {
+    const posts = Array.from({ length: 45 }, (_, index) => ({
+      author: { name: `层主${index + 2}` },
+      floor: index + 2,
+      content: `<p>第 ${index + 2} 楼</p>`
+    }))
+
+    const result = normalizeTiebaPost('https://tieba.baidu.com/p/123', {
+      thread: { title: '超长贴', content: '<p>正文</p>' },
+      posts
+    })
+
+    expect('ok' in result).toBe(false)
+    if ('ok' in result) throw new Error('expected successful result')
+    expect(result.extras?.commentBlocks).toHaveLength(30)
+    expect(result.extras?.commentBlocks?.[29]?.floor).toBe(31)
+  })
+
   it('normalizes HIBI-style tieba post lists', () => {
     const result = normalizeHibiTiebaPost('https://tieba.baidu.com/p/123', {
       forum: { name: '校园生活吧' },
@@ -92,7 +137,7 @@ describe('normalizeTiebaPost', () => {
       displayName: '贴吧',
       title: '标题',
       images: ['https://img/a.jpg', 'https://img/b.jpg'],
-      videos: ['https://video/a.mp4']
+      videos: [{ url: 'https://video/a.mp4' }]
     })
     expect('ok' in result).toBe(false)
     if ('ok' in result) throw new Error('expected successful result')

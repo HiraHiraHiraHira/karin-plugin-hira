@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { MusicItem, MusicPlayable, MusicProvider } from '@/music/types'
 import { fetchJson } from '@/services/http'
 
-import { normalizeDuration } from './helpers'
+import { normalizeDuration, providerError } from './helpers'
 
 type BilibiliProviderOptions = {
   cookie?: string
@@ -49,11 +49,18 @@ type BilibiliAudioStream = {
   backup_url?: string[]
 }
 
+type BilibiliDurlStream = {
+  url?: string
+  backup_url?: string[]
+}
+
 type BilibiliPlayUrl = {
   data?: {
     dash?: {
       audio?: BilibiliAudioStream[]
     }
+    /** 部分视频没有 dash 音频, 只能取整段视频流(云崽兜底). */
+    durl?: BilibiliDurlStream[]
   }
 }
 
@@ -139,6 +146,10 @@ const getItemBvid = (item: BilibiliAppSearchItem) => {
   return item.share?.video?.bvid || extractBvFromText(item.param) || extractBvFromText(item.uri)
 }
 
+/** 部分 CDN 回源返回纯 IP 主机头, QQ 语音/播放器无法直连; 换成云崽同款 upos 镜像域名. */
+export const normalizeBilibiliAudioUrl = (url: string) =>
+  url.replace(/^https?:\/\/\d+\.\d+\.\d+\.\d+\/\/?/, 'https://upos-sz-mirrorhw.bilivideo.com/')
+
 export const selectBilibiliAudio = (payload: BilibiliPlayUrl) => {
   const audio = payload.data?.dash?.audio ?? []
   const selected = audio
@@ -150,12 +161,18 @@ export const selectBilibiliAudio = (payload: BilibiliPlayUrl) => {
     .filter(item => item.url)
     .sort((a, b) => b.id - a.id)[0]
 
-  if (!selected) return undefined
-
-  return {
-    id: selected.id,
-    url: toPlayableBilibiliUrl(selected.url, selected.backups)
+  if (selected) {
+    return {
+      id: selected.id,
+      url: toPlayableBilibiliUrl(selected.url, selected.backups)
+    }
   }
+
+  // DASH 没有音频流时退回渐进式 durl（音视频混合），只取一条
+  const durl = payload.data?.durl?.find(item => item.url || item.backup_url?.length)
+  const durlUrl = durl?.url || durl?.backup_url?.[0]
+  if (!durlUrl) return undefined
+  return { id: 0, url: normalizeBilibiliAudioUrl(durlUrl) }
 }
 
 export class BilibiliMusicProvider implements MusicProvider {
@@ -174,7 +191,7 @@ export class BilibiliMusicProvider implements MusicProvider {
 
   private signedAppUrl(url: string, extra: Record<string, string | number>) {
     if (!this.appKey || !this.appSecret) {
-      throw new Error('B站音乐需要配置 music.bilibili.appKey 和 music.bilibili.appSecret，或设置 HIRA_BILIBILI_APP_KEY/HIRA_BILIBILI_APP_SECRET')
+      throw new Error('哔哩哔哩：未配置 App 凭据。请在配置面板填写 music.bilibili.appKey/appSecret，或设置环境变量 HIRA_BILIBILI_APP_KEY/HIRA_BILIBILI_APP_SECRET（不内置公共 appKey）')
     }
     return signedBilibiliAppUrl(url, bilibiliAppParams(this.appKey, extra), this.appSecret)
   }
@@ -196,7 +213,12 @@ export class BilibiliMusicProvider implements MusicProvider {
       pn: page,
       ps: pageSize
     })
-    const data = await this.requestJson<{ data?: { items?: BilibiliAppSearchItem[] } }>(url, this.requestOptions())
+    let data: { data?: { items?: BilibiliAppSearchItem[] } }
+    try {
+      data = await this.requestJson(url, this.requestOptions())
+    } catch (error) {
+      throw providerError('哔哩哔哩', error)
+    }
 
     return (data.data?.items ?? [])
       .map((item): MusicItem | undefined => {
@@ -235,7 +257,7 @@ export class BilibiliMusicProvider implements MusicProvider {
   async getPlayable(item: MusicItem): Promise<MusicPlayable> {
     const info = await this.resolveVideoInfo(item)
     if (!info.aid || !info.cid) {
-      throw new Error('B站音频解析需要 aid 和 cid，请使用 音乐 <B站链接> 或重新搜索')
+      throw new Error('哔哩哔哩：无法解析该视频（缺少 aid/cid），请使用 音乐 <B站链接> 或重新搜索')
     }
 
     const playUrl = this.signedAppUrl('https://api.bilibili.com/x/tv/playurl', {
@@ -244,7 +266,9 @@ export class BilibiliMusicProvider implements MusicProvider {
     })
     const data = await this.requestJson<BilibiliPlayUrl>(playUrl, { defaultHeaders: false })
     const audio = selectBilibiliAudio(data)
-    if (!audio) throw new Error('B站未返回可用音频流')
+    if (!audio) {
+      throw new Error('哔哩哔哩：未返回可用音频流（可尝试配置 music.cookies.bilibili 或稍后重试）')
+    }
 
     return {
       item,
@@ -256,7 +280,7 @@ export class BilibiliMusicProvider implements MusicProvider {
   async fromLink(url: string): Promise<MusicItem> {
     const bvid = extractBvFromText(url)
     if (!bvid) {
-      throw new Error('未在链接中识别到 B站 BV 号，请使用 BV 号链接或可在浏览器打开的 b23.tv 短链')
+      throw new Error('哔哩哔哩：未在链接中识别到 BV 号，请使用 BV 号链接或可在浏览器打开的 b23.tv 短链')
     }
 
     const data = await this.requestJson<BilibiliVideoInfo>(
@@ -264,7 +288,7 @@ export class BilibiliMusicProvider implements MusicProvider {
       this.requestOptions(`https://www.bilibili.com/video/${bvid}`)
     )
     if (!data.data?.aid || !data.data?.cid) {
-      throw new Error('B站视频信息不完整（缺少 aid/cid），可能已失效或需要配置 music.cookies.bilibili')
+      throw new Error('哔哩哔哩：视频信息不完整（缺少 aid/cid），可能已失效或需要配置 music.cookies.bilibili')
     }
 
     return {

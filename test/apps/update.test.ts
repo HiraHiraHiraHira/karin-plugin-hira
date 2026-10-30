@@ -6,6 +6,7 @@ import type { Message } from 'node-karin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Root } from '@/root'
+import { clearCardRenderCache } from '@/services/cardRender'
 
 const karinMocks = vi.hoisted(() => {
   const command = vi.fn((_reg, handler, options) => ({ handler, options }))
@@ -120,6 +121,7 @@ const useInstallSource = (pkg: object | undefined) => {
 describe('update command', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearCardRenderCache()
     karinMocks.master.mockReturnValue(['owner-1'])
     karinMocks.getAllBotList.mockReturnValue([])
     karinMocks.dbGet.mockResolvedValue(undefined)
@@ -138,6 +140,24 @@ describe('update command', () => {
     expect(updateReg.test('hira更新')).toBe(true)
     expect(updateReg.test('#hi更新')).toBe(true)
     expect(updateReg.test('#kkk更新')).toBe(false)
+  })
+
+  it('silently passes non-master update commands to the next handler', async () => {
+    const e = createMessage() as unknown as Message & { isMaster: boolean }
+    e.isMaster = false
+    const next = vi.fn()
+    const { hiraUpdateCommand } = await importUpdate()
+    const command = hiraUpdateCommand as unknown as {
+      handler: (e: Message, next: () => unknown) => Promise<unknown>
+      options: Record<string, unknown>
+    }
+
+    await command.handler(e, next)
+
+    expect(command.options.perm).toBeUndefined()
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(karinMocks.checkPkgUpdate).not.toHaveBeenCalled()
+    expect(e.reply).not.toHaveBeenCalled()
   })
 
   it('resolves the git update target from a file dependency install', async () => {

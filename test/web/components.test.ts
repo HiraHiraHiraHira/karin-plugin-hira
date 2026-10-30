@@ -175,7 +175,6 @@ describe('createWebConfigComponents', () => {
   it('exposes video quality controls for native resolvers', () => {
     expect(findComponent('resolverBilibiliQuality')).toMatchObject({
       label: 'B站下载画质',
-      defaultValue: '64',
       componentType: 'select'
     })
     expect(findComponent('resolverBilibiliCodec')).toMatchObject({

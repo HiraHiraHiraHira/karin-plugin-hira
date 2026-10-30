@@ -113,10 +113,11 @@ describe('fetchResponse', () => {
   })
 
   it('wraps proxy (axios) network failures in a Chinese message', async () => {
-    vi.mocked(axios.request).mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:7890'))
+    // 代理通道的网络错误同样会重试，mock 必须持续失败，直到重试耗尽后抛出包装后的中文错误
+    vi.mocked(axios.request).mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:7890'))
 
     await expect(
-      fetchResponse('https://example.test/api', { proxy: 'http://127.0.0.1:7890' })
+      fetchResponse('https://example.test/api', { proxy: 'http://127.0.0.1:7890', retryDelayMs: 0 })
     ).rejects.toThrow('网络请求失败：connect ECONNREFUSED 127.0.0.1:7890')
   })
 
@@ -127,6 +128,45 @@ describe('fetchResponse', () => {
     await expect(
       fetchResponse('https://example.test/api', { proxy: 'http://127.0.0.1:7890' })
     ).rejects.toBe(canceled)
+  })
+})
+
+describe('fetchResponse retry', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('retries network errors and 5xx three times with exponential backoff', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(new Response('busy', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchJson('https://example.test/api', { retryDelayMs: 0 })).resolves.toEqual({ ok: true })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retry client errors', async () => {
+    const fetchMock = vi.fn(async () => new Response('missing', { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchJson('https://example.test/api', { retryDelayMs: 0 })).rejects.toThrow('HTTP 404')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries through the resolver proxy wrapper', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { fetchResolverJson } = await import('@/services/resolverHttp')
+    await expect(fetchResolverJson('https://example.test/api', { retryDelayMs: 0 })).resolves.toEqual({ ok: true })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
 

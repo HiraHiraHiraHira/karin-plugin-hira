@@ -12,6 +12,14 @@ type QQProviderOptions = {
   fetchJson?: <T = unknown>(url: string, options?: Parameters<typeof fetchJson>[1]) => Promise<T>
 }
 
+type QQFileInfo = {
+  media_mid?: string
+  size_320mp3?: number
+  size_192ogg?: number
+  size_128mp3?: number
+  size_96aac?: number
+}
+
 type QQSearchSong = {
   mid?: string
   songmid?: string
@@ -19,9 +27,13 @@ type QQSearchSong = {
   songid?: number
   name?: string
   songname?: string
+  title?: string
   singer?: Array<{ name?: string }>
   album?: { name?: string, pmid?: string, mid?: string }
   interval?: number
+  file?: QQFileInfo
+  pay?: { price_track?: number, pay_play?: number }
+  sa?: number
 }
 
 type QQClientSearchSong = {
@@ -84,21 +96,15 @@ const asRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
-export const normalizeQQSearchResult = (payload: unknown): MusicItem[] => {
-  const root = asRecord(payload)
-  const req = asRecord(root.req_1)
-  const data = asRecord(req.data)
-  const body = asRecord(data.body)
-  const song = asRecord(body.song)
-  const list = Array.isArray(song.list) ? song.list as QQSearchSong[] : []
-
-  return list.map(item => {
+/** 搜索结果、每日推荐、电台、收藏的歌曲结构一致, 共用同一份映射. */
+export const normalizeQQTracks = (tracks: QQSearchSong[] | undefined): MusicItem[] => {
+  return (tracks ?? []).map(item => {
     const mid = item.mid || item.songmid || String(item.id ?? item.songid ?? '')
     const albumMid = item.album?.pmid || item.album?.mid || ''
     return {
       id: mid,
       source: 'qq' as const,
-      title: item.name || item.songname || '未知歌曲',
+      title: item.name || item.songname || item.title || '未知歌曲',
       artists: (item.singer ?? []).map(singer => singer.name || '').filter(Boolean),
       album: item.album?.name,
       durationSeconds: normalizeDuration(item.interval),
@@ -132,6 +138,18 @@ export const normalizeQQClientSearchResult = (payload: unknown): MusicItem[] => 
   }).filter(item => item.id)
 }
 
+/** 官方桌面搜索的返回结构：req_1.data.body.song.list[] */
+export const normalizeQQSearchResult = (payload: unknown): MusicItem[] => {
+  const root = asRecord(payload)
+  const req = asRecord(root.req_1)
+  const data = asRecord(req.data)
+  const body = asRecord(data.body)
+  const song = asRecord(body.song)
+  const list = Array.isArray(song.list) ? song.list as QQSearchSong[] : []
+
+  return normalizeQQTracks(list)
+}
+
 export const pickQQPlayableUrl = (payload: unknown) => {
   const root = asRecord(payload)
   const req = asRecord(root.req_0)
@@ -149,15 +167,28 @@ export const decodeQQLyric = (value: string | undefined) => {
   return Buffer.from(value, 'base64').toString('utf8')
 }
 
-export const normalizeQQCookieStatus = (payload: unknown) => {
+export const normalizeQQCookieStatus = (payload: unknown, vip?: boolean) => {
   const data = asRecord(payload)
   const profile = data.data as QQProfileResponse['data'] | undefined
   const nick = profile?.creator?.nick?.trim()
   if (data.code === 0 && nick) {
-    return { ok: true, message: nick }
+    return { ok: true, message: nick, ...(vip === undefined ? {} : { vip }) }
   }
   return { ok: false, message: 'Cookie 失效或未登录' }
 }
+
+const qqCookieValue = (cookie: string, keys: string[]) => {
+  for (const part of cookie.split(';')) {
+    const [key, ...rest] = part.split('=')
+    if (keys.includes(key.trim().toLowerCase())) return rest.join('=').trim()
+  }
+  return undefined
+}
+
+/** QQ 音乐个性化接口需要 uin; 微信登录的 Cookie 只有 wxuin. */
+export const parseQQCookieUin = (cookie: string) => qqCookieValue(cookie, ['uin', 'wxuin'])
+
+const qqCookieMusicKey = (cookie: string) => qqCookieValue(cookie, ['qm_keyst', 'qqmusic_key'])
 
 const buildQQSearchBody = (keyword: string, page: number, pageSize: number) => ({
   req_1: {
@@ -172,21 +203,44 @@ const buildQQSearchBody = (keyword: string, page: number, pageSize: number) => (
   }
 })
 
-const buildQQVkeyBody = (songmid: string) => ({
-  req_0: {
-    module: 'vkey.GetVkeyServer',
-    method: 'CgiGetVkey',
-    param: {
-      guid: '10000',
-      songmid: [songmid],
-      songtype: [0],
-      uin: '0',
-      loginflag: 1,
-      platform: '20',
-      filename: [`M800${songmid}.mp3`]
+/** 云崽的音质阶梯: 320mp3 > 192ogg > 128mp3 > 96aac, 请求时按可用档位一次全带上. */
+const qqQualityTiers: Array<[keyof QQFileInfo, string, string]> = [
+  ['size_320mp3', 'M800', 'mp3'],
+  ['size_192ogg', 'O600', 'ogg'],
+  ['size_128mp3', 'M500', 'mp3'],
+  ['size_96aac', 'C400', 'm4a']
+]
+
+/**
+ * 文件名必须用 file.media_mid(部分歌曲与 songmid 不同), 否则 vkey 返回空 purl.
+ * 档位信息缺失时(例如只有搜索结果 mid)退回 320mp3 单档.
+ */
+export const buildQQVkeyFilenames = (songmid: string, file?: QQFileInfo) => {
+  const mediaMid = file?.media_mid?.trim() || songmid
+  const filenames = qqQualityTiers
+    .filter(([sizeKey]) => Number(file?.[sizeKey] ?? 0) > 0)
+    .map(([, prefix, ext]) => `${prefix}${mediaMid}.${ext}`)
+  return filenames.length > 0 ? filenames : [`M800${mediaMid}.mp3`]
+}
+
+const buildQQVkeyBody = (songmid: string, file?: QQFileInfo) => {
+  const filenames = buildQQVkeyFilenames(songmid, file)
+  return {
+    req_0: {
+      module: 'vkey.GetVkeyServer',
+      method: 'CgiGetVkey',
+      param: {
+        guid: '10000',
+        songmid: filenames.map(() => songmid),
+        songtype: filenames.map(() => 0),
+        uin: '0',
+        loginflag: 1,
+        platform: '20',
+        filename: filenames
+      }
     }
   }
-})
+}
 
 const qqSongmidPattern = /^[0-9A-Za-z]{14}$/
 const qqShareSalt = 'q;z(&l~sdf2!nK'
@@ -223,6 +277,7 @@ export class QQProvider implements MusicProvider {
       })
       return normalizeQQSearchResult(data)
     } catch {
+      // 云崽行为: 搜索失败就是没有结果, 由调用方回 "没有找到歌曲！", 不伪造列表.
       return []
     }
   }
@@ -262,10 +317,11 @@ export class QQProvider implements MusicProvider {
   }
 
   private async resolvePlayable(item: MusicItem): Promise<MusicPlayable> {
+    const track = item.raw as QQSearchSong | undefined
     try {
       const data = await this.requestJson(musicuUrl, {
         method: 'POST',
-        body: JSON.stringify(buildQQVkeyBody(item.id)),
+        body: JSON.stringify(buildQQVkeyBody(item.id, track?.file)),
         headers: {
           'Content-Type': 'application/json',
           Referer: 'https://y.qq.com/',
@@ -285,7 +341,7 @@ export class QQProvider implements MusicProvider {
     const legacyUrl = buildLegacyQQShareMusicUrl(item.id)
     if (legacyUrl) return { item, audioUrl: legacyUrl }
 
-    if (!this.tempApi) throw new Error('QQ音乐暂未返回可播放链接')
+    if (!this.tempApi) throw new Error(`QQ音乐：未获取到《${item.title}》的可播放链接（可能需要配置 Cookie 或该歌曲需付费）`)
     const raw = item.raw as { keyword?: string, index?: number } | undefined
     const keyword = raw?.keyword || item.title
     const index = raw?.index || 1
@@ -310,7 +366,7 @@ export class QQProvider implements MusicProvider {
     return playable
   }
 
-  async getLyrics(item: MusicItem): Promise<string | undefined> {
+  async getLyrics(item: MusicItem): Promise<string[]> {
     const url = `https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(item.id)}&format=json&nobase64=0`
     const data = await this.requestJson<{ lyric?: string, trans?: string }>(url, {
       headers: {
@@ -320,7 +376,8 @@ export class QQProvider implements MusicProvider {
     })
     const lyric = decodeQQLyric(data.lyric)
     const trans = decodeQQLyric(data.trans)
-    return [lyric, trans].filter(Boolean).join('\n\n')
+    // 原文/翻译分段返回, 由发送侧各自转发(云崽行为).
+    return [lyric, trans].filter((value): value is string => Boolean(value?.trim()))
   }
 
   async checkCookie() {
@@ -331,6 +388,141 @@ export class QQProvider implements MusicProvider {
         Cookie: this.cookie
       }
     })
-    return normalizeQQCookieStatus(data)
+    const uin = parseQQCookieUin(this.cookie)
+    return normalizeQQCookieStatus(data, uin ? await this.isVip(uin) : undefined)
+  }
+
+  /** QQ 音乐 VIP 判定, 失败按非 VIP 处理(状态回显不应因 VIP 查询失败而报错). */
+  async isVip(uin: string) {
+    try {
+      const data = await this.requestJson<{ req_0?: { code?: string | number, data?: { infoMap?: Record<string, { iVipFlag?: number, iSuperVip?: number, iNewVip?: number, iNewSuperVip?: number }> } } }>(musicuUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          ...(this.cookie ? { Cookie: this.cookie } : {})
+        },
+        body: JSON.stringify({
+          comm: { cv: 4747474, ct: 24, format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', notice: 0, platform: 'yqq.json', needNewCode: 1, uin: 0, g_tk_new_20200303: 5381, g_tk: 5381 },
+          req_0: { module: 'userInfo.VipQueryServer', method: 'SRFVipQuery_V2', param: { uin_list: [uin] } }
+        })
+      })
+      if (String(data.req_0?.code ?? '0') !== '0') return false
+      const info = data.req_0?.data?.infoMap?.[uin]
+      if (!info) return false
+      return [info.iVipFlag, info.iSuperVip, info.iNewVip, info.iNewSuperVip].some(flag => flag === 1)
+    } catch {
+      return false
+    }
+  }
+
+  private requirePersonalizedCookie(action: string) {
+    if (!this.cookie.trim()) {
+      throw new Error(`QQ音乐：${action}需要先配置 Cookie（发送 #提交音乐ck 粘贴 QQ 音乐 Cookie）`)
+    }
+    const uin = parseQQCookieUin(this.cookie)
+    if (!uin) {
+      throw new Error(`QQ音乐：${action}的 Cookie 缺少 uin/wxuin，请重新获取完整 Cookie`)
+    }
+    return uin
+  }
+
+  private async requestMusicu<T>(req: Record<string, unknown>, uin: string) {
+    return this.requestJson<T>(musicuUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Referer: 'https://y.qq.com/',
+        ...(this.cookie ? { Cookie: this.cookie } : {})
+      },
+      body: JSON.stringify({
+        comm: {
+          g_tk: 5381,
+          uin,
+          format: 'json',
+          ct: 20,
+          cv: 1803,
+          platform: 'wk_v17',
+          guid: crypto.createHash('md5').update(String(Date.now())).digest('hex'),
+          tmeLoginType: 2,
+          psrf_qqunionid: '',
+          authst: qqCookieMusicKey(this.cookie) ?? ''
+        },
+        ...req
+      })
+    })
+  }
+
+  /** 云崽 dirid: 201=我喜欢, 202=每日推荐. */
+  private async getDissTracks(dirid: number, page: number, pageSize: number) {
+    const uin = this.requirePersonalizedCookie(dirid === 202 ? '每日推荐' : '我的收藏')
+    const data = await this.requestMusicu<{ req_0?: { code?: string | number, data?: { songlist?: QQSearchSong[] } } }>({
+      req_0: {
+        module: 'srf_diss_info.DissInfoServer',
+        method: 'CgiGetDiss',
+        param: {
+          disstid: 0,
+          dirid,
+          onlysonglist: 0,
+          song_begin: (Math.max(page, 1) - 1) * pageSize,
+          song_num: pageSize,
+          userinfo: 1,
+          pic_dpi: 800,
+          orderlist: 1
+        }
+      }
+    }, uin)
+    if (String(data.req_0?.code ?? '0') !== '0') {
+      throw new Error(`QQ音乐：${dirid === 202 ? '每日推荐' : '收藏'}获取失败（登录态可能已失效）`)
+    }
+    return normalizeQQTracks(data.req_0?.data?.songlist)
+  }
+
+  async getPersonalized(kind: 'dailyRecommend' | 'radio' | 'favorites' | 'random', options?: { page?: number, pageSize?: number }) {
+    const page = options?.page ?? 1
+    const pageSize = options?.pageSize ?? 20
+
+    if (kind === 'favorites') return this.getDissTracks(201, page, pageSize)
+    if (kind === 'dailyRecommend') return this.getDissTracks(202, page, pageSize)
+
+    if (kind === 'radio') {
+      const uin = this.requirePersonalizedCookie('个性电台')
+      const data = await this.requestMusicu<{ req_0?: { code?: string | number, data?: { tracks?: QQSearchSong[] } } }>({
+        req_0: { method: 'get_radio_track', module: 'pc_track_radio_svr', param: { id: 99, num: pageSize } }
+      }, uin)
+      if (String(data.req_0?.code ?? '0') !== '0') {
+        throw new Error('QQ音乐：个性电台获取失败（登录态可能已失效）')
+      }
+      return normalizeQQTracks(data.req_0?.data?.tracks)
+    }
+
+    const uin = this.requirePersonalizedCookie('每日推荐')
+    const feed = await this.requestMusicu<{ req_0?: { code?: string | number, data?: { v_shelf?: Array<{ style?: number, v_niche?: Array<{ v_card?: Array<{ id?: number | string }> }> }> } } }>({
+      req_0: { module: 'recommend.RecommendFeedServer', method: 'get_recommend_feed', param: { direction: 1, page: 1, v_cache: [], v_uniq: [], s_num: 0 } }
+    }, uin)
+    if (String(feed.req_0?.code ?? '0') !== '0') {
+      throw new Error('QQ音乐：获取推荐歌曲失败，请重试')
+    }
+
+    const ids: string[] = []
+    for (const shelf of feed.req_0?.data?.v_shelf ?? []) {
+      if (shelf.style !== 1) continue
+      for (const niche of shelf.v_niche ?? []) {
+        for (const card of niche.v_card ?? []) {
+          if (card.id !== undefined && ids.length < pageSize) ids.push(String(card.id))
+        }
+      }
+    }
+    if (ids.length === 0) throw new Error('QQ音乐：获取推荐歌曲失败，请重试')
+
+    const data = await this.requestMusicu<{ req_0?: { code?: string | number, data?: { tracks?: QQSearchSong[] } } }>({
+      req_0: {
+        module: 'track_info.UniformRuleCtrlServer',
+        method: 'GetTrackInfo',
+        param: { ids: ids.map(Number), types: ids.map(() => 200) }
+      }
+    }, uin)
+    const tracks = normalizeQQTracks(data.req_0?.data?.tracks)
+    if (tracks.length === 0) throw new Error('QQ音乐：获取推荐歌曲失败，请重试')
+    return [tracks[Math.floor(Math.random() * tracks.length)]]
   }
 }

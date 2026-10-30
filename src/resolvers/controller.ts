@@ -6,7 +6,7 @@ import { replyResolvedPost } from '@/services/message'
 
 import { resolveBilibili } from './bilibili'
 import { resolveDouyin } from './douyin'
-import { resolveByGeneralApis } from './general'
+import { resolveGeneral } from './general'
 import { shouldSkipForKkkCompat } from './kkkCompat'
 import { resolveKuaishou } from './kuaishou'
 import { matchResolver } from './matcher'
@@ -37,10 +37,7 @@ const resolveMatched = async (url: string, message = ''): Promise<ResolverResult
   if (match.platform === 'xiaohongshu') return resolveXiaohongshu(url, config.cookies.xiaohongshu)
   if (match.platform === 'kuaishou') return resolveKuaishou(url, config.generalApis)
 
-  return resolveByGeneralApis(match.displayName, url, config.generalApis, {
-    platform: 'general',
-    pageUrl: url
-  })
+  return resolveGeneral(url, config.generalApis)
 }
 
 export const handleResolverMessage = async (e: Message, next?: () => unknown) => {

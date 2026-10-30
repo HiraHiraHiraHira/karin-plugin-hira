@@ -2,13 +2,16 @@ import * as fs from 'node:fs'
 import path from 'node:path'
 
 import type { CustomNodeElement, Message } from 'node-karin'
-import { common, segment } from 'node-karin'
+import { logger, segment } from 'node-karin'
 
 import { Config } from '@/config'
 import { formatArtists } from '@/music/providers/helpers'
 import { dedupeImageUrls, imageQuality, isUsableImageUrl } from '@/resolvers/media'
 import type { MusicItem, MusicPlayable } from '@/music/types'
-import type { ResolvedPost, ResolverFailure, ResolverResult } from '@/resolvers/types'
+import type { ResolvedPost, ResolverFailure, ResolverResult, ResolverVideo } from '@/resolvers/types'
+import { downloadFile } from '@/runtime/downloader'
+import { runFfmpeg } from '@/runtime/ffmpeg'
+import { createTempFilePath } from '@/runtime/temp'
 import {
   buildErrorCardHtml,
   buildMusicListCardHtml,
@@ -17,13 +20,16 @@ import {
   logCardRenderFailure,
   renderCardImage
 } from '@/services/cardRender'
+import { sendWithMediaRetry } from '@/services/mediaRetry'
 import { sendMusicCard } from '@/services/musicCard'
 import { inlinePreviewCover } from '@/services/previewCover'
 import {
+  buildFakeForwardNode,
   buildResolverCommentNodes,
   buildResolverContentNodes,
   canSendResolverForward,
   resolverForwardCopy,
+  resolveEventForwardIdentity,
   sendResolverForward
 } from '@/services/resolverForward'
 
@@ -123,12 +129,163 @@ const replyVideo = async (e: Message, file: string, pageUrl?: string) => {
   }
 }
 
-export const replyText = async (e: Message, text: string) => {
-  await e.reply(`${prefix()}：${text}` as ReplyPayload)
+const isRemoteMedia = (url: string) => /^https?:\/\//i.test(url)
+
+/**
+ * CDN 直链需要平台页面作为 Referer; B站/抖音按完整页面 URL, 其余用页面源站.
+ */
+const videoReferer = (post: ResolvedPost) => {
+  const pageUrl = post.pageUrl?.trim()
+  if (pageUrl) {
+    try {
+      const parsed = new URL(pageUrl)
+      return post.platform === 'bilibili' || post.platform === 'douyin'
+        ? pageUrl
+        : `${parsed.protocol}//${parsed.host}/`
+    } catch {
+      // 页面 URL 不合法时退回平台默认 Referer.
+    }
+  }
+  const defaults: Partial<Record<ResolvedPost['platform'], string>> = {
+    bilibili: 'https://www.bilibili.com/',
+    douyin: 'https://www.douyin.com/',
+    xiaohongshu: 'https://www.xiaohongshu.com/',
+    weibo: 'https://weibo.com/',
+    kuaishou: 'https://www.kuaishou.com/',
+    tieba: 'https://tieba.baidu.com/',
+    xiaoheihe: 'https://www.xiaoheihe.cn/'
+  }
+  return defaults[post.platform]
 }
 
-export const replyPlainText = async (e: Message, text: string) => {
-  await e.reply(text as ReplyPayload)
+const videoExtension = (url: string) => {
+  try {
+    const ext = path.posix.extname(new URL(url).pathname).replace(/^\./, '').toLowerCase()
+    return /^(?:mp4|m4v|mov|webm|flv|mkv|m4s)$/.test(ext) ? ext : 'mp4'
+  } catch {
+    return 'mp4'
+  }
+}
+
+/**
+ * resolve 阶段只登记直链, 真正的下载/合并/转封装留到发送时按需执行,
+ * 避免解析阶段长时间阻塞首条回复, 也避免用户没等到结果却已下载大文件.
+ */
+const downloadResolverMedia = async (url: string, ext: string, referer?: string) => {
+  const output = createTempFilePath('video', ext)
+  await downloadFile({
+    url,
+    output,
+    headers: {
+      ...(referer ? { Referer: referer } : {}),
+      Accept: '*/*'
+    },
+    timeoutMs: Math.max(5, Config.runtime.downloadTimeoutSeconds) * 1000,
+    maxBytes: Config.runtime.maxVideoFileSizeBytes,
+    proxy: Config.resolver.proxy || undefined
+  })
+  return output
+}
+
+const tryFfmpeg = async (options: Parameters<typeof runFfmpeg>[0]) => {
+  try {
+    return await runFfmpeg(options)
+  } catch (error) {
+    logger.warn(`[hira] ffmpeg ${options.format} failed: ${error instanceof Error ? error.message : String(error)}`)
+    return undefined
+  }
+}
+
+/**
+ * 发送时准备视频: 远程直链先下载(沿用 runtime 体积上限), 有独立音轨则合并,
+ * 再按需做 QQ 兼容转封装; 本地视频保持原样, 不重复转码.
+ */
+export const prepareResolverVideo = async (video: ResolverVideo, options?: { referer?: string }): Promise<string | undefined> => {
+  const sourceUrl = video.url?.trim()
+  if (!sourceUrl) return undefined
+  const audioUrl = video.audioUrl?.trim()
+  const remote = isRemoteMedia(sourceUrl)
+
+  if (!remote) {
+    if (!audioUrl) return sourceUrl
+    const audioFile = isRemoteMedia(audioUrl)
+      ? await downloadResolverMedia(audioUrl, 'm4a', options?.referer)
+      : audioUrl
+    const merged = await tryFfmpeg({
+      format: 'merge',
+      videoInput: sourceUrl,
+      audioInput: audioFile,
+      output: createTempFilePath('video', 'mp4')
+    })
+    return merged || sourceUrl
+  }
+
+  let videoFile = await downloadResolverMedia(sourceUrl, videoExtension(sourceUrl), options?.referer)
+  if (audioUrl) {
+    const audioFile = isRemoteMedia(audioUrl)
+      ? await downloadResolverMedia(audioUrl, 'm4a', options?.referer)
+      : audioUrl
+    const merged = await tryFfmpeg({
+      format: 'merge',
+      videoInput: videoFile,
+      audioInput: audioFile,
+      output: createTempFilePath('video', 'mp4')
+    })
+    if (merged) videoFile = merged
+  }
+
+  const remuxed = await tryFfmpeg({
+    format: 'qq-video',
+    input: videoFile,
+    output: createTempFilePath('video', 'mp4')
+  })
+  return remuxed || videoFile
+}
+
+const replyResolverVideo = async (e: Message, video: ResolverVideo, pageUrl?: string, referer?: string) => {
+  if (isRemoteMedia(video.url)) {
+    // 首条媒体下载前给临时占位, 到期自动撤回; 失败不影响后续发送.
+    await replyText(e, '视频下载中，请稍候…', { recallMsg: 30 }).catch(() => undefined)
+  }
+
+  let file: string | undefined
+  try {
+    file = await prepareResolverVideo(video, { referer })
+  } catch (error) {
+    if (Config.resolver.sending.videoFailureFallbackEnabled !== false) {
+      await replyText(e, `视频下载失败：${errorText(error) || '未知错误'}${pageUrl ? `\n原链接：${pageUrl}` : ''}`)
+    }
+    return
+  }
+  if (!file) return
+  await replyVideo(e, file, pageUrl)
+}
+
+export const replyResolverVideos = async (e: Message, post: ResolvedPost) => {
+  const referer = videoReferer(post)
+  for (const video of post.videos.slice(0, 9)) {
+    await replyResolverVideo(e, video, post.pageUrl, referer)
+  }
+}
+
+export type ReplyHelperOptions = {
+  /** 是否引用触发消息, 交互性回复默认引用 (node-karin 原生默认不引用). */
+  reply?: boolean
+  /** 发送后自动撤回的秒数, 用于语音上传占位等临时提示. */
+  recallMsg?: number
+}
+
+const replyOptions = (options?: ReplyHelperOptions) => {
+  const at = options?.reply === false ? { reply: false } : { reply: true }
+  return options?.recallMsg ? { ...at, recallMsg: options.recallMsg } : at
+}
+
+export const replyText = async (e: Message, text: string, options?: ReplyHelperOptions) => {
+  await e.reply(`${prefix()}：${text}` as ReplyPayload, replyOptions(options))
+}
+
+export const replyPlainText = async (e: Message, text: string, options?: ReplyHelperOptions) => {
+  await e.reply(text as ReplyPayload, replyOptions(options))
 }
 
 export const replyImage = async (e: Message, url: string, title?: string) => {
@@ -138,7 +295,7 @@ export const replyImage = async (e: Message, url: string, title?: string) => {
   ].filter(Boolean)
 
   try {
-    await e.reply(elements as ReplyPayload)
+    await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), elements)
   } catch {
     await replyText(e, `${title ? `${title}\n` : ''}${url}`)
   }
@@ -173,7 +330,7 @@ export const replyMusicList = async (e: Message, items: MusicItem[], page: numbe
       html: buildMusicListCardHtml(rows, page, startIndex),
       width: 920
     })
-    const result = await e.reply(images as ReplyPayload)
+    const result = await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), images)
     return extractMessageId(result)
   } catch (error) {
     logCardRenderFailure('music-list', error)
@@ -232,14 +389,6 @@ const isFailure = (result: ResolverResult): result is ResolverFailure => 'ok' in
 
 const resolverCommentsEnabled = () => Config.resolver.commentsEnabled !== false
 
-const botForwardIdentity = (e: Message, fallbackName: string) => {
-  const bot = e.bot as unknown as { account?: { selfId?: string | number, name?: string } }
-  return {
-    id: String(bot.account?.selfId || e.selfId || ''),
-    name: fallbackName
-  }
-}
-
 const canSendForward = canSendResolverForward
 
 const resolvedPostText = (post: ResolvedPost) => {
@@ -266,62 +415,9 @@ const resolverImageDedupeOptions = () => ({
   dedupe: Config.resolver.media.dedupeImages !== false,
   filterLowQuality: Config.resolver.media.filterLowQualityImages !== false
 })
-/**
- * 带签名的查询参数名(大小写不敏感, 覆盖 cos/oss/aws 的 `x-expires` / `X-Amz-Signature` 前缀写法).
- * 这类 URL 追加任意参数都会让签名失效, 因此必须原样返回.
- */
-const signedQueryKeyPattern = /(?:^|[-_])(?:sign|signature|sig|expires|auth_key|token)$/i
 
-const hasSignedQuery = (url: string) => {
-  const queryIndex = url.indexOf('?')
-  if (queryIndex < 0) return false
-  const query = url.slice(queryIndex + 1).split('#')[0]
-  return query.split('&').some(pair => signedQueryKeyPattern.test(pair.split('=')[0]))
-}
-
-/**
- * 风控重发:首次发送失败(常见图床风控)时,给图片 URL 追加随机查询字节改 hash 后重试一次.
- * 参考 R `utils/retry.js` replyWithRetry.仅改 URL,不动本地文件.
- * 签名 URL 追加参数只会破坏签名, 故原样返回.
- */
-export const withCacheBuster = (url: string) => (
-  hasSignedQuery(url)
-    ? url
-    : `${url}${url.includes('?') ? '&' : '?'}hira-retry=${Math.random().toString(36).slice(2, 8)}${Date.now() % 1000}`
-)
-
-export const bustImageUrls = (elements: ReplyPayload) => {
-  const list = Array.isArray(elements) ? elements : [elements]
-  return list.map(el => {
-    if (typeof el !== 'object' || el === null || !('type' in el)) return el
-    const seg = el as { type?: string, file?: unknown, url?: unknown }
-    if (seg.type !== 'image') return el
-    const raw = typeof seg.file === 'string' ? seg.file : typeof seg.url === 'string' ? seg.url : undefined
-    if (!raw || !/^https?:/i.test(raw)) return el
-    const busted = withCacheBuster(raw)
-    return { ...seg, ...(typeof seg.file === 'string' ? { file: busted } : { url: busted }) }
-  })
-}
-
-/**
- * 先正常发,失败则改 hash 重试一次;两次都失败抛给调用方降级.
- * 重试只缓解 URL 侧缓存负命中(同一 URL 首次失败后被 CDN/客户端缓存), 对上传失败/风控
- * 类失败无效; 签名 URL 不会被追加参数(见 `withCacheBuster`).
- * 目前仅 `directResolvedPost` 使用, 其余发送路径失败直接降级.
- */
-const replyWithRetry = async (e: Message, elements: ReplyPayload) => {
-  try {
-    await e.reply(elements)
-    return
-  } catch (first) {
-    try {
-      await e.reply(bustImageUrls(elements) as ReplyPayload)
-      return
-    } catch {
-      throw first
-    }
-  }
-}
+// 兼容既有导出: 缓存扰动与重发逻辑已收拢到 services/mediaRetry, 其它调用方仍从这里取.
+export { bustImageUrls, withCacheBuster } from '@/services/mediaRetry'
 
 /** 转发按 50 条分批,超限分多条发出(参考 R sendImagesInBatches). */
 const FORWARD_BATCH_SIZE = 50
@@ -335,14 +431,15 @@ const sendForwardBatched = async (e: Message, post: ResolvedPost, nodes: CustomN
 }
 
 const directResolvedPost = async (e: Message, post: ResolvedPost, text: string) => {
+  const imageUrls = resolverImageUrls(post.images).slice(0, 9)
   const elements = [
     segment.text(text),
-    ...resolverImageUrls(post.images).slice(0, 9).map(url => segment.image(url))
+    ...imageUrls.map(url => segment.image(url))
   ]
   try {
-    await replyWithRetry(e, elements as ReplyPayload)
+    await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), elements)
   } catch {
-    await replyPlainText(e, [text, ...resolverImageUrls(post.images).slice(0, 9)].join('\n'))
+    await replyPlainText(e, [text, ...imageUrls].join('\n'))
   }
 }
 
@@ -357,7 +454,7 @@ const cardResolvedPost = async (e: Message, post: ResolvedPost, text: string) =>
       ...images,
       ...resolverImageUrls(post.images).slice(0, 9).map(url => segment.image(url))
     ]
-    await e.reply(elements as ReplyPayload)
+    await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), elements)
   } catch (error) {
     logCardRenderFailure(`resolver-${post.platform}`, error)
     await directResolvedPost(e, post, text)
@@ -385,7 +482,7 @@ const resolverPreviewCardPost = async (e: Message, post: ResolvedPost, text: str
       }),
       width: 920
     })
-    await e.reply(images as ReplyPayload)
+    await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), images)
   } catch (error) {
     logCardRenderFailure(`resolver-${post.platform}-preview`, error)
     await directResolvedPost(e, post, text)
@@ -393,14 +490,15 @@ const resolverPreviewCardPost = async (e: Message, post: ResolvedPost, text: str
 }
 
 const replyResolvedPostForward = async (e: Message, post: ResolvedPost, text: string) => {
-  const identity = botForwardIdentity(e, `${post.displayName}解析`)
-  const nodes = common.makeForward([
+  const identity = resolveEventForwardIdentity(e, post.displayName)
+  const imageUrls = resolverImageUrls(post.images)
+  const nodes = [buildFakeForwardNode([
     segment.text(text),
-    ...resolverImageUrls(post.images).map(url => segment.image(url))
-  ], identity.id, identity.name)
+    ...imageUrls.map(url => segment.image(url))
+  ], identity.id, identity.name)]
   const isLongText = (post.description?.length || 0) > resolverLongTextLength
-  const summary = post.images.length > 1
-    ? `查看${post.images.length}张图片`
+  const summary = imageUrls.length > 1
+    ? `查看${imageUrls.length}张图片`
     : isLongText
       ? '查看完整解析内容'
       : '查看解析内容'
@@ -439,7 +537,8 @@ const replyRichResolverPost = async (e: Message, post: ResolvedPost, text: strin
 
     const commentBlocks = resolverCommentsEnabled() ? post.extras?.commentBlocks || [] : []
     if (commentBlocks.length > 0) {
-      await sendForwardBatched(e, post, buildResolverCommentNodes(commentBlocks), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
+      const identity = resolveEventForwardIdentity(e, post.displayName)
+      await sendForwardBatched(e, post, buildResolverCommentNodes(commentBlocks, identity), copy.commentPrompt, `查看${commentBlocks.length}条${copy.commentUnit}`)
     }
   } catch {
     await directResolvedPost(e, post, text)
@@ -460,7 +559,7 @@ export const replyResolvedPost = async (e: Message, result: ResolverResult) => {
         }),
         width: 920
       })
-      await e.reply(images as ReplyPayload)
+      await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), images)
     } catch (error) {
       logCardRenderFailure(`resolver-error-${result.platform}`, error)
       await replyPlainText(e, `${result.displayName}解析失败：${result.reason}`)
@@ -472,8 +571,7 @@ export const replyResolvedPost = async (e: Message, result: ResolverResult) => {
   const text = resolvedPostText(post)
   if (hasRichResolverExtras(post)) {
     await replyRichResolverPost(e, post, text)
-    const video = post.videos[0]
-    if (video) await replyVideo(e, video, post.pageUrl)
+    await replyResolverVideos(e, post)
     return
   }
 
@@ -489,6 +587,5 @@ export const replyResolvedPost = async (e: Message, result: ResolverResult) => {
     await cardResolvedPost(e, post, text)
   }
 
-  const video = post.videos[0]
-  if (video) await replyVideo(e, video, post.pageUrl)
+  await replyResolverVideos(e, post)
 }

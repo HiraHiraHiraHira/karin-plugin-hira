@@ -2,8 +2,8 @@ import karin, { type Message } from 'node-karin'
 
 import { isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
-import { replyText } from '@/services/message'
-import { parseTranslateCommand, parseTranslateTargetOnly } from '@/translate/commandParser'
+import { replyPlainText } from '@/services/message'
+import { parseTranslateCommand, parseTranslateTargetOnly, translateCommandReg } from '@/translate/commandParser'
 import { translateText } from '@/translate/service'
 
 /** 从消息元素里取引用段的 messageId：引用段只带 id，正文要再用 getMsg 取一次。 */
@@ -57,8 +57,8 @@ export const extractQuotedText = async (e: Message): Promise<string | undefined>
 }
 
 // `#?` 与仓库内其它命令一致：部分部署会把 `#` 当别名剥掉，部分不会。
-export const translateReg = /^#?(?:翻|trans)\S+\s+[\s\S]+$/i
-export const translateTargetOnlyReg = /^#?(?:翻|trans)(\S+)\s*$/i
+// 命令词与目标语言之间不需要空格（R tools.js 切片语义），正文/引用两种形态共用一个入口。
+export const translateReg = translateCommandReg
 
 export const translateHandler = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
@@ -71,24 +71,21 @@ export const translateHandler = async (e: Message, next?: () => unknown) => {
     if (!target) return next?.()
     const quoted = await extractQuotedText(e)
     if (!quoted) {
-      await replyText(e, '请附上要翻译的文本，或引用一条消息后重试')
+      await replyPlainText(e, '请附上要翻译的文本，或引用一条消息后重试')
       return true
     }
     command = { type: 'translate', target, text: quoted }
   }
 
   try {
-    await replyText(e, await translateText(command.text, command.target))
+    // R tools.js 的 `e.reply(result, true)`：引用回复且不带插件前缀。
+    await e.reply(await translateText(command.text, command.target), { reply: true })
   } catch (error) {
-    await replyText(e, error instanceof Error ? error.message : String(error))
+    await replyPlainText(e, error instanceof Error ? error.message : String(error))
   }
   return true
 }
 
 export const translate = karin.command(translateReg, translateHandler, {
   name: 'Hira-翻译'
-})
-
-export const translateQuoted = karin.command(translateTargetOnlyReg, translateHandler, {
-  name: 'Hira-翻译引用'
 })

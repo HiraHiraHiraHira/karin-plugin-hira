@@ -8,11 +8,12 @@ catApis:
 
 # 买家秀 API，按顺序尝试
 buyerShowApis:
-  - "https://api.vvhan.com/api/tao"
+  - "https://api.suyanw.cn/api/tbmjx.php?return=json"
 
 # 累了 API，按顺序尝试
 tiredApis:
-  - "https://api.vvhan.com/api/wallpaper/views"
+  - "https://imgapi.cn/cos2.php?return=jsonpro"
+  - "https://imgapi.cn/cos.php?return=jsonpro"
 
 # 医药查询 API，必须含 {keyword}
 medicineApi: "https://server.dayi.org.cn/api/search?keyword={keyword}&pageNo=1&pageSize=10"

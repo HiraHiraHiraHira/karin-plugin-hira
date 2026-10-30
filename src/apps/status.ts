@@ -9,7 +9,7 @@ import { buildStatusCardHtml, logCardRenderFailure, renderCardImage } from '@/se
 import { replyText } from '@/services/message'
 
 export const statusReg = createConfiguredCommandRegExp(Config.app.statusCommand, ['hira\\s*状态', 'hi\\s*状态'])
-export const cleanupReg = /^#?(?:(?:hira|hi)\s*)?清理垃圾$/i
+export const cleanupReg = /^#?(?:hira|hi)\s*清理垃圾$/i
 
 type ReplyPayload = Parameters<Message['reply']>[0]
 
@@ -93,11 +93,10 @@ export const runtimeCleanup = karin.task('hira-临时文件清理', '0 * * * *',
 })
 
 export const cleanup = karin.command(cleanupReg, async (e, next) => {
-  if (!isHiraAppEnabled()) return next?.()
+  if (!isHiraAppEnabled() || !e.isMaster) return next?.()
   const result = cleanupRuntimeTemp()
   await replyText(e, `清理完成：删除 ${result.deletedFiles} 个文件，${result.deletedDirs} 个空目录`)
   return true
 }, {
-  name: 'Hira-清理垃圾',
-  perm: 'master'
+  name: 'Hira-清理垃圾'
 })
