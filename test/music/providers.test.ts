@@ -17,6 +17,6 @@ describe('music provider helpers', () => {
 
   it('rejects empty playable URLs', () => {
     expect(requirePlayableUrl('https://example.test/a.mp3')).toBe('https://example.test/a.mp3')
-    expect(() => requirePlayableUrl('')).toThrow('empty playable URL')
+    expect(() => requirePlayableUrl('')).toThrow('没有拿到可播放的音频链接')
   })
 })

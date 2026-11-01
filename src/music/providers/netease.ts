@@ -1,7 +1,10 @@
+import { logger } from 'node-karin'
+
 import type { MusicItem, MusicPlayable, MusicProvider } from '@/music/types'
 import { fetchJson } from '@/services/http'
 
-import { normalizeDuration, requirePlayableUrl } from './helpers'
+import { isPlayableAudioUrl, normalizeDuration, requirePlayableUrl } from './helpers'
+import { aggregatorAudioUrl, aggregatorSearch } from './aggregator'
 
 type NeteaseProviderOptions = {
   baseUrl: string
@@ -44,29 +47,37 @@ export class NeteaseProvider implements MusicProvider {
   async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
     const offset = Math.max(0, page - 1) * pageSize
 
-    if (isOfficialNeteaseApiBase(this.baseUrl)) {
-      const data = await this.requestJson<{ result?: { songs?: NeteaseSearchSong[] } }>(`${this.baseUrl}/cloudsearch/pc`, {
-        method: 'POST',
-        body: new URLSearchParams({
-          offset: String(offset),
-          limit: String(pageSize),
-          type: '1',
-          s: keyword
-        }).toString(),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Referer: 'https://music.163.com/',
-          ...(this.cookie ? { Cookie: this.cookie } : {})
-        }
-      })
+    try {
+      if (isOfficialNeteaseApiBase(this.baseUrl)) {
+        const data = await this.requestJson<{ result?: { songs?: NeteaseSearchSong[] } }>(`${this.baseUrl}/cloudsearch/pc`, {
+          method: 'POST',
+          body: new URLSearchParams({
+            offset: String(offset),
+            limit: String(pageSize),
+            type: '1',
+            s: keyword
+          }).toString(),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Referer: 'https://music.163.com/',
+            ...(this.cookie ? { Cookie: this.cookie } : {})
+          }
+        })
 
-      return (data.result?.songs ?? []).map(song => this.toItem(song))
+        const items = (data.result?.songs ?? []).map(song => this.toItem(song))
+        if (items.length > 0) return items
+      } else {
+        const url = `${this.baseUrl}/cloudsearch?keywords=${encodeURIComponent(keyword)}&limit=${pageSize}&offset=${offset}`
+        const data = await this.requestJson<{ result?: { songs?: NeteaseSearchSong[] } }>(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})
+
+        const items = (data.result?.songs ?? []).map(song => this.toItem(song))
+        if (items.length > 0) return items
+      }
+    } catch {
+      // 原生搜索失败时交给聚合音源
     }
 
-    const url = `${this.baseUrl}/cloudsearch?keywords=${encodeURIComponent(keyword)}&limit=${pageSize}&offset=${offset}`
-    const data = await this.requestJson<{ result?: { songs?: NeteaseSearchSong[] } }>(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})
-
-    return (data.result?.songs ?? []).map(song => this.toItem(song))
+    return aggregatorSearch('netease', keyword, page, pageSize, this.requestJson)
   }
 
   async getPlayable(item: MusicItem): Promise<MusicPlayable> {
@@ -92,7 +103,20 @@ export class NeteaseProvider implements MusicProvider {
       }
     }
 
-    if (fallbackUrl) return { item, audioUrl: fallbackUrl }
+    // fee: 0 免费 / 1 VIP / 4 付费专辑 / 8 低音质免费。免费的直链不必探测，省一次请求
+    const fee = Number((item.raw as { fee?: number } | undefined)?.fee ?? 0)
+    const fallbackUsable = fallbackUrl && (fee === 0 || await isPlayableAudioUrl(fallbackUrl))
+    if (fallbackUrl && fallbackUsable) return { item, audioUrl: fallbackUrl }
+
+    const aggregatedUrl = await aggregatorAudioUrl(item, this.requestJson)
+    if (aggregatedUrl && await isPlayableAudioUrl(aggregatedUrl)) return { item, audioUrl: aggregatedUrl }
+
+    if (fallbackUrl) {
+      // 会员/版权歌的 outer/url 会跳到 404 页面。但平台 ID 卡（type=163）根本不需要直链，
+      // 所以这里不报错，照旧交出去，只记一条日志，方便排查「卡片能出、点开播不了」。
+      logger.warn(`[Hira-网易云] 直链校验未通过，仅平台卡片可用 曲目=${item.title} id=${item.id}`)
+      return { item, audioUrl: fallbackUrl }
+    }
 
     const url = `${this.baseUrl}/song/url/v1?id=${encodeURIComponent(item.id)}&level=exhigh`
     const data = await this.requestJson<{ data?: Array<{ url?: string, level?: string }> }>(url, this.cookie ? { headers: { Cookie: this.cookie } } : {})

@@ -42,7 +42,33 @@ YouTube 不做。B站、抖音、快手、小红书裸链在 `resolver.kkkCompat
 - `#总结一下 <链接>`
 - `#Hira状态`
 - `#Hira清理垃圾`、`#清理垃圾`
+- `#点歌卡片状态`（主人/管理员）
 - `#Hira帮助`
+
+## 点歌卡片发送
+
+点歌结果按 `music.card.channels` 的顺序逐通道尝试，前面的失败自动降级到后面：
+
+1. `platform`：发**平台 ID 卡**（`{type:'163', id}` 这种形态），卡片身份由平台决定，网易云的歌就是网易云样式的卡。签名由协议端完成，插件收不到失败信号，属于哑通道。
+2. `ark`：调用第三方签名服务换回一张**签好名的卡片**，用 `json` 段发出。协议端对 `json` 段是原样透传、不再签名，所以这条路失败是**可观测**的，可以重试、可以熔断。卡片身份由签名服务按 `format` 参数决定。
+3. `music`：自定义 `music` 段，签名由协议端内置服务完成。协议端签名失败时会**静默丢弃**这个元素，插件无从感知，因此它只适合当兜底。
+
+顺序这么排的原因是「表现优先、可观测兜底」：`platform` 身份最正确但不可观测，`ark` 可观测但身份取决于签名服务，`music` 全平台都能发但同样不可观测。拿不到标准卡数字 ID 的平台（QQ音乐是 MID、B站不支持）会自动跳过 `platform`。
+
+全部通道失败时，会退回一条「标题 - 歌手 + 链接」文字，避免命令完全没有回应。
+
+配置见 `music.yaml` 的 `card` 段：
+
+- `card.platform.types` 决定哪些平台走 ID 卡，留空的平台直接跳过
+- `card.ark.key` 为空时自动跳过 `ark` 通道
+- `card.ark.apiUrl` 需要返回 `{ code: 200, data: <ark 卡片> }`；换服务只改这一行
+- `card.ark.formats` 决定哪些平台走 `ark`，值会作为 `format` 参数传给签名服务
+- `card.ark.attachCover` 默认 `false`，因为卡片本身带封面
+- `card.breaker` 连续失败到阈值后冷却一段时间，冷却结束自动恢复（只作用于 `ark`）
+
+排查用 `#点歌卡片状态`：能看到通道顺序、`platform` 映射、`ark` 是否配置、熔断状态、各通道成功/失败/跳过计数和最近 10 条发送记录。每次发送也会在日志里打一行 `[Hira-卡片] 通道=... 结果=... 耗时=... 曲目=...`。
+
+设计取舍、平台支持矩阵和验收清单见 [`docs/music-card-best-practice.md`](docs/music-card-best-practice.md)。
 
 ## 安装
 
@@ -73,7 +99,7 @@ cd plugins/karin-plugin-hira && pnpm install
 默认配置在 `config/default_config/`：
 
 - `app.yaml`：基础开关、回复前缀和命令名。回复前缀只用于普通命令，多平台解析结果不会附加此前缀。
-- `music.yaml`：点歌源、列表会话、语音、高品质、B站音乐 App 凭据、Cookie 和音乐 API。
+- `music.yaml`：点歌源、列表会话、语音、高品质、B站音乐 App 凭据、Cookie 和音乐 API。其中 `api.aggregatorUrl` 是聚合音源（默认 `https://music.txqq.pro/`），原生接口失效时兜底搜索与直链；`api.aggregatorEnabled` 可关掉它。
 - `resolver.yaml`：多平台解析开关、KKK 兼容、平台开关、发送策略、媒体策略、诊断日志、B站/抖音下载上限、画质、编码、Cookie 和通用解析 API。
 - `runtime.yaml`：临时目录、自动清理、ffmpeg/ffprobe、下载超时，以及单个媒体、预览封面和临时目录容量上限。
 - `light.yaml`：轻量命令使用的外部 API。

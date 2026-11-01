@@ -56,6 +56,7 @@ export const helpMenu = [
     title: '管理',
     items: [
       { title: '#Hira更新 / #hi更新', description: '检查插件更新，更新成功后自动重启 Karin。', icon: '更' },
+      { title: '#点歌卡片状态', description: '查看卡片通道顺序、熔断状态和最近发送记录。', icon: '卡' },
       { title: '#hi清理垃圾 / #Hira清理垃圾', description: '清理下载和渲染临时文件。', icon: '清' }
     ]
   }

@@ -22,6 +22,50 @@ highQuality: false
 # 发送音频失败时是否回退到文本链接
 textFallback: true
 
+# 点歌卡片发送：按通道优先级依次尝试，前面的失败自动降级到后面
+# platform = 平台 ID 卡（{type:'163', id}），卡片身份原生正确（网易云就是网易云），签名由协议端完成
+# ark      = 第三方签名服务换一张签好名的卡片，用 json 段发出（失败可观测、可重试、可熔断）
+# music    = 自定义 music 段，签名由协议端内置服务完成（失败时协议端会静默丢元素，只能当兜底）
+card:
+  channels:
+    - platform
+    - ark
+    - music
+  # 卡片之外是否附带「标题 - 歌手 + 链接」文字行
+  textFallback: true
+  platform:
+    enabled: true
+    # 平台 -> OneBot 音乐卡片类型（qq/163/kugou/kuwo/migu）
+    # 留空 = 该平台跳过：QQ音乐搜索返回 MID 不是标准卡要的数字 ID，酷我/酷狗同理未验证
+    types:
+      qq: ""
+      netease: "163"
+      kuwo: ""
+      kugou: ""
+      bilibili: ""
+  ark:
+    # 签名服务地址，返回体需要是 { code: 200, data: <ark 卡片> }
+    apiUrl: https://apii.xianyuw.cn/api/v1/qq-musicArk
+    # 空 = 不启用 ark 通道，行为与旧版本一致
+    key: ""
+    timeoutMs: 5000
+    retries: 1
+    # ark 卡片自带封面，默认不再单独发一张图
+    attachCover: false
+    # 平台 -> 签名服务 format 参数，留空表示该平台跳过 ark
+    formats:
+      qq: qq
+      netease: netease
+      kuwo: ""
+      kugou: kugou
+      bilibili: bilibili
+  music:
+    enabled: true
+  # 熔断只作用于 ark（platform / music 是哑通道，插件收不到失败信号，不参与）
+  breaker:
+    failThreshold: 3
+    cooldownSeconds: 600
+
 # B站音乐移动端 App 凭据；留空时可改用环境变量，未配置则无法使用 B站点歌搜索/播放
 bilibili:
   appKey: ""
@@ -39,3 +83,6 @@ cookies:
 api:
   neteaseBaseUrl: "https://music.163.com/api"
   qqTempApi: "https://www.hhlqilongzhu.cn/api/dg_QQmusicflac.php?msg={keyword}&n={index}&type=json"
+  # txqq.pro 聚合音源：原生接口失效时兜底搜索和直链（QQ音乐/网易云/酷狗/酷我）
+  aggregatorUrl: "https://music.txqq.pro/"
+  aggregatorEnabled: true

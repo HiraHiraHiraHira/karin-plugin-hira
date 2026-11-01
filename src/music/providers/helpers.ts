@@ -1,3 +1,5 @@
+import { fetchResponse } from '@/services/http'
+
 export const formatArtists = (artists: string[]) => {
   const clean = artists.map(artist => artist.trim()).filter(Boolean)
   return clean.length > 0 ? clean.join(' / ') : '未知歌手'
@@ -20,6 +22,22 @@ export const normalizeDuration = (value: number | string | undefined) => {
 }
 
 export const requirePlayableUrl = (url: string | undefined) => {
-  if (!url?.trim()) throw new Error('empty playable URL')
+  if (!url?.trim()) throw new Error('没有拿到可播放的音频链接，稍后再试或换个音乐源')
   return url
+}
+
+/**
+ * 轻量校验直链能不能播：只看响应头，不下载音频。
+ * 网易云 `song/media/outer/url` 对会员/版权受限的歌会跳到 404 页面（text/html），
+ * 直接发出去就是一张点得出、点不动的卡。
+ */
+export const isPlayableAudioUrl = async (url: string | undefined): Promise<boolean> => {
+  if (!url?.trim()) return false
+  try {
+    const response = await fetchResponse(url, { method: 'HEAD', timeoutMs: 8000 })
+    const contentType = (response.headers.get('content-type') || '').toLowerCase()
+    return response.ok && (contentType.startsWith('audio/') || contentType.includes('octet-stream'))
+  } catch {
+    return false
+  }
 }

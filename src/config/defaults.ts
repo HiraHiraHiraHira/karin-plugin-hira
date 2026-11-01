@@ -16,6 +16,41 @@ export const defaultConfig: HiraConfig = {
     voiceEnabled: true,
     highQuality: false,
     textFallback: true,
+    card: {
+      channels: ['platform', 'ark', 'music'],
+      textFallback: true,
+      platform: {
+        enabled: true,
+        types: {
+          qq: '',
+          netease: '163',
+          kuwo: '',
+          kugou: '',
+          bilibili: ''
+        }
+      },
+      ark: {
+        apiUrl: 'https://apii.xianyuw.cn/api/v1/qq-musicArk',
+        key: '',
+        timeoutMs: 5000,
+        retries: 1,
+        attachCover: false,
+        formats: {
+          qq: 'qq',
+          netease: 'netease',
+          kuwo: '',
+          kugou: 'kugou',
+          bilibili: 'bilibili'
+        }
+      },
+      music: {
+        enabled: true
+      },
+      breaker: {
+        failThreshold: 3,
+        cooldownSeconds: 600
+      }
+    },
     bilibili: {
       appKey: '',
       appSecret: ''
@@ -29,7 +64,9 @@ export const defaultConfig: HiraConfig = {
     },
     api: {
       neteaseBaseUrl: 'https://music.163.com/api',
-      qqTempApi: 'https://www.hhlqilongzhu.cn/api/dg_QQmusicflac.php?msg={keyword}&n={index}&type=json'
+      qqTempApi: 'https://www.hhlqilongzhu.cn/api/dg_QQmusicflac.php?msg={keyword}&n={index}&type=json',
+      aggregatorUrl: 'https://music.txqq.pro/',
+      aggregatorEnabled: true
     }
   },
   resolver: {

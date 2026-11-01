@@ -4,6 +4,7 @@ import type { MusicItem, MusicPlayable, MusicProvider } from '@/music/types'
 import { fetchJson } from '@/services/http'
 
 import { normalizeDuration, requirePlayableUrl } from './helpers'
+import { aggregatorAudioUrl, aggregatorSearch } from './aggregator'
 
 type QQProviderOptions = {
   tempApi?: string
@@ -23,6 +24,15 @@ type QQSearchSong = {
   interval?: number
 }
 
+type QQClientSearchSong = {
+  songmid?: string
+  songname?: string
+  singer?: Array<{ name?: string }>
+  albummid?: string
+  albumname?: string
+  interval?: number
+}
+
 type QQProfileResponse = {
   code?: number
   data?: {
@@ -34,6 +44,8 @@ type QQProfileResponse = {
 
 const musicuUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg'
 const profileUrl = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg?format=json'
+/** 旧版搜索接口：不需要登录态，musicu 桌面搜索未登录时返回 2001 空列表，用它兜底 */
+const legacySearchUrl = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
 
 const asRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -58,6 +70,29 @@ export const normalizeQQSearchResult = (payload: unknown): MusicItem[] => {
       album: item.album?.name,
       durationSeconds: normalizeDuration(item.interval),
       coverUrl: albumMid ? `https://y.qq.com/music/photo_new/T002R300x300M000${albumMid}.jpg` : undefined,
+      pageUrl: `https://y.qq.com/n/ryqq/songDetail/${mid}`,
+      raw: item
+    }
+  }).filter(item => item.id)
+}
+
+/** 旧搜索接口的返回结构：data.song.list[]，字段是 songmid/songname/singer[].name/albummid/interval */
+export const normalizeQQClientSearchResult = (payload: unknown): MusicItem[] => {
+  const root = asRecord(payload)
+  const data = asRecord(root.data)
+  const song = asRecord(data.song)
+  const list = Array.isArray(song.list) ? song.list as QQClientSearchSong[] : []
+
+  return list.map(item => {
+    const mid = (item.songmid || '').trim()
+    return {
+      id: mid,
+      source: 'qq' as const,
+      title: item.songname || '未知歌曲',
+      artists: (item.singer ?? []).map(singer => singer.name || '').filter(Boolean),
+      album: item.albumname,
+      durationSeconds: normalizeDuration(item.interval),
+      coverUrl: item.albummid ? `https://y.qq.com/music/photo_new/T002R300x300M000${item.albummid}.jpg` : undefined,
       pageUrl: `https://y.qq.com/n/ryqq/songDetail/${mid}`,
       raw: item
     }
@@ -141,7 +176,8 @@ export class QQProvider implements MusicProvider {
     this.requestJson = options.fetchJson ?? fetchJson
   }
 
-  async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
+  /** 官方桌面搜索：未登录态下可能返回 code 2001 空列表 */
+  private async searchOfficial(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
     try {
       const data = await this.requestJson(musicuUrl, {
         method: 'POST',
@@ -152,20 +188,41 @@ export class QQProvider implements MusicProvider {
           ...(this.cookie ? { Cookie: this.cookie } : {})
         }
       })
-      const items = normalizeQQSearchResult(data)
-      if (items.length > 0) return items
+      return normalizeQQSearchResult(data)
     } catch {
-      // Keep the legacy temp API search fallback below.
+      return []
     }
+  }
 
-    return Array.from({ length: Math.min(pageSize, 5) }, (_, index) => ({
-      id: `${keyword}:${index + 1}`,
-      source: 'qq' as const,
-      title: `${keyword} #${index + 1}`,
-      artists: ['QQ音乐'],
-      pageUrl: `https://y.qq.com/n/ryqq/search?w=${encodeURIComponent(keyword)}`,
-      raw: { keyword, index: index + 1 }
-    }))
+  /** 旧搜索接口：不需要登录态，官方接口拿不到结果时兜底 */
+  private async searchLegacy(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
+    try {
+      const url = `${legacySearchUrl}?w=${encodeURIComponent(keyword)}&format=json&n=${pageSize}&p=${page}&cr=1&g_tk=5381`
+      const data = await this.requestJson(url, {
+        headers: {
+          Referer: 'https://y.qq.com/',
+          ...(this.cookie ? { Cookie: this.cookie } : {})
+        }
+      })
+      return normalizeQQClientSearchResult(data)
+    } catch {
+      return []
+    }
+  }
+
+  async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
+    const official = await this.searchOfficial(keyword, page, pageSize)
+    if (official.length > 0) return official
+
+    const legacy = await this.searchLegacy(keyword, page, pageSize)
+    if (legacy.length > 0) return legacy
+
+    const aggregated = await aggregatorSearch('qq', keyword, page, pageSize, this.requestJson)
+    if (aggregated.length > 0) return aggregated
+
+    // 三个搜索接口都没结果时直接报错：以前会退化成「青花瓷 #1」这种假 id 的占位列表，
+    // 用户点进去才在取直链时报错，反而更难理解
+    throw new Error('QQ音乐搜索暂时不可用，可以试试「#网易点歌 歌名」或稍后再试')
   }
 
   async getPlayable(item: MusicItem): Promise<MusicPlayable> {
@@ -184,6 +241,10 @@ export class QQProvider implements MusicProvider {
     } catch {
       // Fall back to configured temp API.
     }
+
+    // 匿名 vkey 现在常返回空 purl；聚合音源能给出完整时长的直链，优先于只有 60 秒的分享直链
+    const aggregatedUrl = await aggregatorAudioUrl(item, this.requestJson)
+    if (aggregatedUrl) return { item, audioUrl: aggregatedUrl }
 
     const legacyUrl = buildLegacyQQShareMusicUrl(item.id)
     if (legacyUrl) return { item, audioUrl: legacyUrl }

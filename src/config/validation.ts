@@ -11,6 +11,10 @@ type ValidationRule = {
 const numberRules: ValidationRule[] = [
   { path: 'music.pageSize', label: 'music.pageSize', min: 1, max: 20 },
   { path: 'music.sessionTtlSeconds', label: 'music.sessionTtlSeconds', min: 30, max: 3600 },
+  { path: 'music.card.ark.timeoutMs', label: 'music.card.ark.timeoutMs', min: 1000, max: 30000 },
+  { path: 'music.card.ark.retries', label: 'music.card.ark.retries', min: 0, max: 5 },
+  { path: 'music.card.breaker.failThreshold', label: 'music.card.breaker.failThreshold', min: 1, max: 20 },
+  { path: 'music.card.breaker.cooldownSeconds', label: 'music.card.breaker.cooldownSeconds', min: 10, max: 86400 },
   { path: 'resolver.priority', label: 'resolver.priority', min: 0, max: 9999 },
   { path: 'resolver.maxVideoDurationSeconds', label: 'resolver.maxVideoDurationSeconds', min: 0, max: 21600 },
   { path: 'resolver.bilibili.maxVideoDurationSeconds', label: 'resolver.bilibili.maxVideoDurationSeconds', min: 0, max: 21600 },
@@ -31,6 +35,8 @@ const musicSources = ['netease', 'qq', 'kuwo', 'kugou', 'bilibili']
 const urlPaths: Array<{ path: string, allowEmpty?: boolean, allowCredentials?: boolean }> = [
   { path: 'music.api.neteaseBaseUrl' },
   { path: 'music.api.qqTempApi' },
+  { path: 'music.api.aggregatorUrl' },
+  { path: 'music.card.ark.apiUrl' },
   { path: 'resolver.proxy', allowEmpty: true, allowCredentials: true },
   { path: 'resolver.generalApis', allowEmpty: true },
   { path: 'light.catApis', allowEmpty: true },
@@ -105,6 +111,28 @@ const validateEnum = (value: unknown, label: string, allowed: string[]) => {
     : `${label} 必须是 ${allowed.join('、')} 之一`
 }
 
+const cardChannels = ['platform', 'ark', 'music']
+const platformCardTypes = ['qq', '163', 'kugou', 'kuwo', 'migu']
+
+const validateCardChannels = (value: unknown) => {
+  if (!Array.isArray(value) || value.length === 0) return 'music.card.channels 必须是非空数组'
+  const unknownChannel = value.find(item => !cardChannels.includes(String(item)))
+  return unknownChannel === undefined
+    ? undefined
+    : `music.card.channels 只支持 ${cardChannels.join('、')}，收到：${String(unknownChannel)}`
+}
+
+/** platform 通道会把这些值直接当协议端的音乐平台名用，填错会被协议端静默丢弃，所以在配置层拦住 */
+const validatePlatformCardTypes = (value: unknown) => {
+  if (!isRecord(value)) return 'music.card.platform.types 必须是对象'
+  const invalid = Object.entries(value).find(([, item]) => (
+    String(item ?? '').trim() && !platformCardTypes.includes(String(item).trim())
+  ))
+  return invalid
+    ? `music.card.platform.types.${invalid[0]} 只支持 ${platformCardTypes.join('、')} 或留空`
+    : undefined
+}
+
 const normalizeUrlTemplate = (value: string) => value.replace(/\{[^}]+\}/g, 'placeholder')
 
 const validateHttpUrl = (value: unknown, label: string, allowEmpty: boolean, allowCredentials = false) => {
@@ -138,6 +166,8 @@ export const validateHiraConfig = (config: HiraConfig): string[] => {
     ...shapeErrors,
     ...numberRules.map(rule => validateNumberRule(config, rule)),
     validateEnum(getPathValue(config, 'music.defaultSource'), 'music.defaultSource', musicSources),
+    validateCardChannels(getPathValue(config, 'music.card.channels')),
+    validatePlatformCardTypes(getPathValue(config, 'music.card.platform.types')),
     validateEnum(getPathValue(config, 'resolver.bilibili.codec'), 'resolver.bilibili.codec', bilibiliCodecs),
     validateEnum(getPathValue(config, 'resolver.douyin.quality'), 'resolver.douyin.quality', douyinQualities),
     ...urlPaths.flatMap(rule => validateUrlPath(config, rule))

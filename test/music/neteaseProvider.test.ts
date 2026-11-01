@@ -1,9 +1,27 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NeteaseProvider, buildNeteaseHighQualityRequest, normalizeNeteaseCookieStatus } from '@/music/providers/netease'
 import type { FetchJsonOptions, fetchJson } from '@/services/http'
 
+// 直链探测会真的发 HEAD 请求，测试里替换掉，避免依赖外网
+const probe = vi.hoisted(() => ({ playable: true }))
+
+vi.mock('@/services/http', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/http')>()
+  return {
+    ...actual,
+    fetchResponse: async () => ({
+      ok: probe.playable,
+      headers: new Headers({ 'content-type': probe.playable ? 'audio/mpeg' : 'text/html;charset=utf8' })
+    }) as unknown as Response
+  }
+})
+
 describe('Netease provider helpers', () => {
+  beforeEach(() => {
+    probe.playable = true
+  })
+
   it('uses xiaofei-compatible cloudsearch pc endpoint for music.163.com api base', async () => {
     const calls: Array<{ url: string, method?: string, body?: BodyInit }> = []
     const requestJson: typeof fetchJson = async <T = unknown>(url: string, options: FetchJsonOptions = {}) => {
@@ -48,6 +66,27 @@ describe('Netease provider helpers', () => {
       pageUrl: 'http://music.163.com/#/song?id=123'
     })).resolves.toMatchObject({
       audioUrl: 'https://music.163.com/song/media/outer/url?id=123'
+    })
+  })
+
+  it('会员歌直链校验没过时优先试聚合音源，仍拿不到也不报错（平台卡片不需要直链）', async () => {
+    probe.playable = false
+    const provider = new NeteaseProvider({
+      baseUrl: 'https://music.163.com/api',
+      fetchJson: async () => {
+        throw new Error('aggregator down')
+      }
+    })
+
+    await expect(provider.getPlayable({
+      id: '186016',
+      source: 'netease',
+      title: '晴天',
+      artists: ['周杰伦'],
+      pageUrl: 'https://music.163.com/#/song?id=186016',
+      raw: { fee: 1 }
+    })).resolves.toMatchObject({
+      audioUrl: 'https://music.163.com/song/media/outer/url?id=186016'
     })
   })
 

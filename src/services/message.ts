@@ -17,6 +17,7 @@ import {
   logCardRenderFailure,
   renderCardImage
 } from '@/services/cardRender'
+import { sendMusicCard } from '@/services/musicCard'
 import { inlinePreviewCover } from '@/services/previewCover'
 import {
   buildResolverCommentNodes,
@@ -174,19 +175,7 @@ export const replyMusicList = async (e: Message, items: MusicItem[], page: numbe
 }
 
 export const replyMusicPlayable = async (e: Message, playable: MusicPlayable) => {
-  const { item } = playable
-  const artists = formatArtists(item.artists)
-  const elements = [
-    item.coverUrl ? segment.image(item.coverUrl) : undefined,
-    segment.customMusic(item.pageUrl, playable.audioUrl, item.title, artists, item.coverUrl || ''),
-    segment.text(`${item.title} - ${artists}\n${item.pageUrl}`)
-  ].filter(Boolean)
-
-  try {
-    await e.reply(elements as ReplyPayload)
-  } catch {
-    await e.reply(`${prefix()}：${item.title} - ${artists}\n${playable.audioUrl || item.pageUrl}` as ReplyPayload)
-  }
+  await sendMusicCard(e, playable)
 }
 
 export const replyVoiceOrAudio = async (e: Message, playable: MusicPlayable) => {
