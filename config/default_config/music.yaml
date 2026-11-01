@@ -66,10 +66,10 @@ card:
     failThreshold: 3
     cooldownSeconds: 600
 
-# B站音乐移动端 App 凭据；留空时可改用环境变量，未配置则无法使用 B站点歌搜索/播放
+# B站音乐移动端 App 凭据；内置 B站 Android 客户端公开凭据（装上即可用），留空也走默认值，可用环境变量覆盖
 bilibili:
-  appKey: ""
-  appSecret: ""
+  appKey: "1d8b6e7d45233436"
+  appSecret: "560c52ccd288fed045859ed18bffd973"
 
 # Cookie
 cookies:

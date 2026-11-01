@@ -14,7 +14,7 @@
 
 - [ ] 升级前备份 Karin 数据目录下的 Hira 配置。
 - [ ] 通过 WebUI 重新读取配置，确认 Cookie、代理、B站音乐 App 凭据和 AI Key 显示为掩码，不要把掩码替换成真实值之外的内容；需要清空时提交空字符串。
-- [ ] 发布前扫描源码、构建产物和 `pnpm pack --dry-run` 清单，确认没有硬编码 App Secret、Token、Cookie 或私钥；B站音乐凭据只从 Karin 配置或 `HIRA_BILIBILI_APP_KEY` / `HIRA_BILIBILI_APP_SECRET` 环境变量读取。
+- [ ] 发布前扫描源码、构建产物和 `pnpm pack --dry-run` 清单，确认没有硬编码用户凭据、Token、Cookie 或私钥。唯一刻意内置的是 `src/music/providers/bilibili.ts` 里 B站 Android 客户端的公开 appkey/secret（默认值，装上即可用，可被配置或 `HIRA_BILIBILI_APP_KEY` / `HIRA_BILIBILI_APP_SECRET` 覆盖）。
 - [ ] 确认 `runtime.maxVideoFileSizeBytes`、`runtime.maxPreviewCoverBytes` 和 `runtime.maxTempBytes` 符合机器磁盘和群聊发送策略。默认值分别为 200 MiB、10 MiB 和 2 GiB。
 - [ ] AI 总结保持 owner/admin 权限；确认测试 URL 不指向内网、回环、云元数据或带账号密码的地址。
 - [ ] resolver 代理只用于解析请求、预览封面和媒体下载；音乐、轻量 API 和 AI 接口不会自动套用 resolver 代理。

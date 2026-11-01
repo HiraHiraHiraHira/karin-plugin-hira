@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { BilibiliMusicProvider, selectBilibiliAudio, toPlayableBilibiliUrl } from '@/music/providers/bilibili'
+import { BilibiliMusicProvider, defaultBilibiliAppKey, selectBilibiliAudio, toPlayableBilibiliUrl } from '@/music/providers/bilibili'
+import type { fetchJson } from '@/services/http'
 
 describe('toPlayableBilibiliUrl（对齐小飞的镜像改写）', () => {
   it('把 IP 型直链换成 bilivideo 镜像域名', () => {
@@ -41,22 +42,41 @@ describe('selectBilibiliAudio', () => {
   })
 })
 
-describe('BilibiliMusicProvider getPlayable', () => {
-  it('fails clearly when app credentials are missing', async () => {
+describe('BilibiliMusicProvider 凭据', () => {
+  const recordingRequest = (calls: string[]): typeof fetchJson => async <T = unknown>(url: string) => {
+    calls.push(url)
+    return { data: { items: [] } } as T
+  }
+
+  it('没配任何凭据时默认用内置的公开 appkey（装上就能用）', async () => {
     const previousAppKey = process.env.HIRA_BILIBILI_APP_KEY
     const previousAppSecret = process.env.HIRA_BILIBILI_APP_SECRET
     delete process.env.HIRA_BILIBILI_APP_KEY
     delete process.env.HIRA_BILIBILI_APP_SECRET
+    const calls: string[] = []
 
     try {
-      const provider = new BilibiliMusicProvider()
-      await expect(provider.search('测试', 1, 1)).rejects.toThrow('music.bilibili.appKey')
+      await new BilibiliMusicProvider({ fetchJson: recordingRequest(calls) }).search('测试', 1, 1)
+      expect(calls[0]).toContain(`appkey=${defaultBilibiliAppKey}`)
+      expect(calls[0]).toMatch(/sign=[0-9a-f]{32}/)
     } finally {
       if (previousAppKey === undefined) delete process.env.HIRA_BILIBILI_APP_KEY
       else process.env.HIRA_BILIBILI_APP_KEY = previousAppKey
       if (previousAppSecret === undefined) delete process.env.HIRA_BILIBILI_APP_SECRET
       else process.env.HIRA_BILIBILI_APP_SECRET = previousAppSecret
     }
+  })
+
+  it('配置里的凭据优先于默认值', async () => {
+    const calls: string[] = []
+    await new BilibiliMusicProvider({
+      appKey: 'my-key',
+      appSecret: 'my-secret',
+      fetchJson: recordingRequest(calls)
+    }).search('测试', 1, 1)
+
+    expect(calls[0]).toContain('appkey=my-key')
+    expect(calls[0]).not.toContain(defaultBilibiliAppKey)
   })
 
   it('searches with the signed app API and maps bilibili video items', async () => {

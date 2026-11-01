@@ -1,4 +1,5 @@
 import type { HiraConfig } from '@/types/config'
+import { defaultBilibiliAppKey, defaultBilibiliAppSecret } from '@/music/providers/bilibili'
 
 export const defaultConfig: HiraConfig = {
   app: {
@@ -52,8 +53,9 @@ export const defaultConfig: HiraConfig = {
       }
     },
     bilibili: {
-      appKey: '',
-      appSecret: ''
+      // B站 Android 客户端公开凭据，内置为默认值（装上就能用），可覆盖
+      appKey: defaultBilibiliAppKey,
+      appSecret: defaultBilibiliAppSecret
     },
     cookies: {
       netease: '',

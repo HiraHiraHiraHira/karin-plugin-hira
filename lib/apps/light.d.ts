@@ -1,7 +1,7 @@
-import * as node_karin14 from "node-karin";
+import * as node_karin9 from "node-karin";
 
 // src/apps/light.d.ts
-declare const light: node_karin14.Command<keyof node_karin14.MessageEventMap>;
+declare const light: node_karin9.Command<keyof node_karin9.MessageEventMap>;
 //# sourceMappingURL=light.d.ts.map
 
 export { light };

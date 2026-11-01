@@ -62,6 +62,14 @@ const bilibiliAppHeaders = {
   'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 12; MI 9 Build/SKQ1.211230.001)'
 }
 
+/**
+ * B站 Android 客户端的公开 appkey/secret（小飞等插件写死在源码里的就是这一对）。
+ * 内置为默认值，装上就能用；要换成自己的写 music.bilibili.appKey/appSecret 或
+ * HIRA_BILIBILI_APP_KEY / HIRA_BILIBILI_APP_SECRET 即可覆盖。
+ */
+export const defaultBilibiliAppKey = '1d8b6e7d45233436'
+export const defaultBilibiliAppSecret = '560c52ccd288fed045859ed18bffd973'
+
 const bilibiliMirrorHost = 'https://upos-sz-mirrorhw.bilivideo.com/'
 const ipHostPattern = /^https?:\/\/\d+\.\d+\.\d+\.\d+\//
 
@@ -152,8 +160,8 @@ export class BilibiliMusicProvider implements MusicProvider {
 
   constructor(options: BilibiliProviderOptions = {}) {
     this.cookie = options.cookie ?? ''
-    this.appKey = options.appKey?.trim() || process.env.HIRA_BILIBILI_APP_KEY?.trim() || ''
-    this.appSecret = options.appSecret?.trim() || process.env.HIRA_BILIBILI_APP_SECRET?.trim() || ''
+    this.appKey = options.appKey?.trim() || process.env.HIRA_BILIBILI_APP_KEY?.trim() || defaultBilibiliAppKey
+    this.appSecret = options.appSecret?.trim() || process.env.HIRA_BILIBILI_APP_SECRET?.trim() || defaultBilibiliAppSecret
     this.requestJson = options.fetchJson ?? fetchJson
   }
 
