@@ -62,6 +62,19 @@ const bilibiliAppHeaders = {
   'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 12; MI 9 Build/SKQ1.211230.001)'
 }
 
+const bilibiliMirrorHost = 'https://upos-sz-mirrorhw.bilivideo.com/'
+const ipHostPattern = /^https?:\/\/\d+\.\d+\.\d+\.\d+\//
+
+/**
+ * 小飞的做法：优先挑 IP 型直链（CDN 直连，不吃 DNS/鉴权），
+ * 再把 host 统一换成 bilivideo 镜像域名，否则协议端/QQ 那边经常拉不到或很快失效。
+ */
+export const toPlayableBilibiliUrl = (url: string, backups: string[] = []) => {
+  if (!url) return url
+  const ipUrl = [url, ...backups].find(item => item && ipHostPattern.test(item))
+  return (ipUrl ?? url).replace(ipHostPattern, bilibiliMirrorHost)
+}
+
 const stripHtml = (value: string | undefined) => (value ?? '').replace(/<[^>]+>/g, '').trim()
 
 const normalizeCover = (url: string | undefined) => {
@@ -116,12 +129,18 @@ export const selectBilibiliAudio = (payload: BilibiliPlayUrl) => {
   const selected = audio
     .map(item => ({
       id: item.id ?? 0,
-      url: item.baseUrl || item.base_url || item.backupUrl?.[0] || item.backup_url?.[0] || ''
+      url: item.baseUrl || item.base_url || item.backupUrl?.[0] || item.backup_url?.[0] || '',
+      backups: [...(item.backupUrl ?? []), ...(item.backup_url ?? [])]
     }))
     .filter(item => item.url)
     .sort((a, b) => b.id - a.id)[0]
 
-  return selected
+  if (!selected) return undefined
+
+  return {
+    id: selected.id,
+    url: toPlayableBilibiliUrl(selected.url, selected.backups)
+  }
 }
 
 export class BilibiliMusicProvider implements MusicProvider {

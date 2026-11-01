@@ -1,6 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
-import { BilibiliMusicProvider, selectBilibiliAudio } from '@/music/providers/bilibili'
+import { BilibiliMusicProvider, selectBilibiliAudio, toPlayableBilibiliUrl } from '@/music/providers/bilibili'
+
+describe('toPlayableBilibiliUrl（对齐小飞的镜像改写）', () => {
+  it('把 IP 型直链换成 bilivideo 镜像域名', () => {
+    expect(toPlayableBilibiliUrl('http://123.45.67.89/upgcxcode/a.m4s'))
+      .toBe('https://upos-sz-mirrorhw.bilivideo.com/upgcxcode/a.m4s')
+  })
+
+  it('base_url 不是 IP 时优先用 IP 型的 backup_url', () => {
+    expect(toPlayableBilibiliUrl('http://cdn.example.test/a.m4s', ['http://10.0.0.1/a.m4s']))
+      .toBe('https://upos-sz-mirrorhw.bilivideo.com/a.m4s')
+  })
+
+  it('都不是 IP 型时保持原样', () => {
+    expect(toPlayableBilibiliUrl('https://upos-sz-mirrorcosov.bilivideo.com/a.m4s'))
+      .toBe('https://upos-sz-mirrorcosov.bilivideo.com/a.m4s')
+  })
+})
 
 describe('selectBilibiliAudio', () => {
   it('selects the highest quality dash audio URL', () => {
