@@ -21,6 +21,5 @@ export const translate = karin.command(translateReg, async (e, next) => {
   }
   return true
 }, {
-  name: 'Hira-翻译',
-  priority: 670
+  name: 'Hira-翻译'
 })

@@ -29,7 +29,6 @@ const ResolverConfigPage = ({ config, device, onApplyConfig, renderers }: Config
           {renderSwitch(['resolver', 'enabled'], '启用多平台解析', '开启后自动识别支持的平台分享链接。')}
           {renderSwitch(['resolver', 'kkkCompat'], 'KKK 兼容模式', '开启时跳过 KKK 已覆盖的平台，关闭后由 Hira 接管更多平台。')}
           {renderSwitch(['resolver', 'commentsEnabled'], '发送评论/回复', '开启后微博、贴吧、小黑盒等富解析会额外发送评论或回复转发。')}
-          {renderTextField(['resolver', 'priority'], '解析优先级', '修改后需重启 Karin 才能完全生效。', { type: 'number', fallback: 900, min: 0, max: 9999 })}
           {renderTextField(['resolver', 'maxVideoDurationSeconds'], '通用视频上限（分钟）', '平台未单独配置时使用；配置文件中保存为秒，0 表示不限制。', minuteOptions)}
           {renderTextField(['resolver', 'proxy'], '代理地址', '仅用于解析接口和媒体下载；已配置账号密码的代理显示为掩码，直接保存会保留原值。')}
         </>

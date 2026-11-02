@@ -59,4 +59,37 @@ describe('MusicSessionStore', () => {
 
     expect(store.getLastSelected('group:1')).toMatchObject({ id: 'a' })
   })
+
+  it('caps the session count and evicts the oldest by expiry', () => {
+    let now = 1000
+    const store = new MusicSessionStore({ ttlMs: 10_000, now: () => now, maxSessions: 2 })
+
+    store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
+    now += 1
+    store.set('group:2', [item('b')], { keyword: '晴天', source: 'netease', page: 1 })
+    now += 1
+    store.set('group:3', [item('c')], { keyword: '晴天', source: 'netease', page: 1 })
+
+    expect(store.size).toBe(2)
+    expect(store.get('group:1')).toBeUndefined()
+    expect(store.get('group:2')).toMatchObject({ items: [{ id: 'b' }] })
+    expect(store.get('group:3')).toMatchObject({ items: [{ id: 'c' }] })
+  })
+
+  it('sweeps expired sessions so they do not count toward the cap', () => {
+    let now = 1000
+    const store = new MusicSessionStore({ ttlMs: 100, now: () => now, maxSessions: 2 })
+
+    store.set('group:1', [item('a')], { keyword: '晴天', source: 'netease', page: 1 })
+    store.set('group:2', [item('b')], { keyword: '晴天', source: 'netease', page: 1 })
+    now = 2000
+
+    expect(store.size).toBe(2)
+    expect(store.sweep()).toBe(2)
+    expect(store.size).toBe(0)
+
+    store.set('group:3', [item('c')], { keyword: '晴天', source: 'netease', page: 1 })
+    expect(store.size).toBe(1)
+    expect(store.get('group:3')).toMatchObject({ items: [{ id: 'c' }] })
+  })
 })

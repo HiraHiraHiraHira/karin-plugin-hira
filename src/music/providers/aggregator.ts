@@ -45,7 +45,7 @@ const cacheKey = (type: string, keyword: string) => `${type}:${keyword.trim().to
 /** 清空结果缓存（测试用，也方便排查"改了配置但结果没变"这类错觉） */
 export const resetAggregatorCache = () => cache.clear()
 
-const request = async (keyword: string, type: string, page: number, requestJson: RequestJson): Promise<AggregatorSong[]> => {
+const request = async (keyword: string, type: string, page: number, requestJson: RequestJson, timeoutMs = requestTimeoutMs): Promise<AggregatorSong[]> => {
   const base = aggregatorUrl()
   if (!base) return []
 
@@ -70,7 +70,7 @@ const request = async (keyword: string, type: string, page: number, requestJson:
       Origin: origin,
       Referer: base
     },
-    timeoutMs: requestTimeoutMs,
+    timeoutMs,
     maxBytes: 512 * 1024
   })
 
@@ -137,12 +137,14 @@ export const aggregatorAudioUrl = async (item: MusicItem, requestJson: RequestJs
 
   const startedAt = Date.now()
   const withinBudget = () => Date.now() - startedAt < overallBudgetMs
+  // 剩余预算算进单次请求超时，保证「已经在飞的请求」也不会突破整体预算
+  const remainingBudgetTimeout = () => Math.max(1000, Math.min(requestTimeoutMs, overallBudgetMs - (Date.now() - startedAt)))
 
   for (const keyword of keywords) {
     // 聚合音源偶发空结果（上游不稳定），重试有上限，且整体不超过预算，别把点歌拖成几十秒
     for (let attempt = 1; attempt <= 3 && withinBudget(); attempt += 1) {
       try {
-        const songs = await request(keyword, type, 1, requestJson)
+        const songs = await request(keyword, type, 1, requestJson, remainingBudgetTimeout())
         const usable = songs.filter(song => isAudioUrl(song.url))
         const exact = usable.filter(song => normalizeText(song.title || '') === targetTitle)
         // 标题带后缀的版本（「晴天 (女声独唱版)」）只在没有精确命中时才接受

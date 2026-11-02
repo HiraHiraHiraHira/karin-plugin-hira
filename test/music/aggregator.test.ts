@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { aggregatorAudioUrl, aggregatorSearch, resetAggregatorCache } from '@/music/providers/aggregator'
 import type { MusicItem } from '@/music/types'
@@ -74,5 +74,30 @@ describe('聚合音源（txqq.pro）', () => {
     }) as unknown as AudioRequest
 
     await expect(aggregatorAudioUrl(item(), request)).resolves.toBeUndefined()
+  })
+
+  it('把剩余预算算进单次请求超时，避免整体拖到 10 秒', async () => {
+    const timeouts: number[] = []
+    let now = 0
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+
+    try {
+      const request = (async (_url: string, options?: { timeoutMs?: number }) => {
+        timeouts.push(Number(options?.timeoutMs))
+        // 模拟一次很慢的请求，每次消耗 3 秒预算
+        now += 3000
+        return { data: [] }
+      }) as unknown as AudioRequest
+
+      await expect(aggregatorAudioUrl(item(), request)).resolves.toBeUndefined()
+    } finally {
+      nowSpy.mockRestore()
+    }
+
+    expect(timeouts.length).toBeGreaterThanOrEqual(2)
+    // 首次请求用满单次上限 5 秒
+    expect(timeouts[0]).toBe(5000)
+    // 预算被消耗后，后续请求超时收紧
+    expect(timeouts[timeouts.length - 1]).toBeLessThan(timeouts[0])
   })
 })

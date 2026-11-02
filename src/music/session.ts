@@ -11,16 +11,27 @@ type StoreOptions = {
   ttlMs?: number
   getTtlMs?: () => number
   now?: () => number
+  maxSessions?: number
 }
+
+/** 内存中最多保留的会话数，超出后按 expiresAt 最旧淘汰，避免只增不减 */
+const defaultMaxSessions = 500
 
 export class MusicSessionStore {
   private readonly getTtlMs: () => number
   private readonly now: () => number
+  private readonly maxSessions: number
   private readonly sessions = new Map<string, Session>()
 
   constructor(options: StoreOptions) {
     this.getTtlMs = options.getTtlMs ?? (() => options.ttlMs ?? 0)
     this.now = options.now ?? Date.now
+    this.maxSessions = Math.max(1, options.maxSessions ?? defaultMaxSessions)
+  }
+
+  /** 当前保留的会话数量，主要供容量/清扫观测 */
+  get size() {
+    return this.sessions.size
   }
 
   set(key: string, items: MusicItem[], meta: MusicSessionMeta) {
@@ -29,6 +40,7 @@ export class MusicSessionStore {
       meta,
       expiresAt: this.now() + Math.max(0, this.getTtlMs())
     })
+    this.evictOverflow()
   }
 
   get(key: string) {
@@ -54,5 +66,31 @@ export class MusicSessionStore {
 
   getLastSelected(key: string) {
     return this.get(key)?.lastSelected
+  }
+
+  /** 清掉所有已过期会话，返回清理数量 */
+  sweep() {
+    const now = this.now()
+    let removed = 0
+    for (const [key, session] of this.sessions) {
+      if (session.expiresAt <= now) {
+        this.sessions.delete(key)
+        removed++
+      }
+    }
+    return removed
+  }
+
+  // 超过上限时先清扫过期条目，仍超限再按 expiresAt 最旧删掉多余条目
+  private evictOverflow() {
+    if (this.sessions.size <= this.maxSessions) return
+    this.sweep()
+    if (this.sessions.size <= this.maxSessions) return
+
+    const overflow = this.sessions.size - this.maxSessions
+    const oldest = [...this.sessions.entries()]
+      .sort((a, b) => a[1].expiresAt - b[1].expiresAt)
+      .slice(0, overflow)
+    for (const [key] of oldest) this.sessions.delete(key)
   }
 }

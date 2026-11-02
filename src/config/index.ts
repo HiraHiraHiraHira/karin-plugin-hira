@@ -17,6 +17,15 @@ const userConfigDir = path.join(karinPathBase, Root.pluginName, 'config')
 const defaultConfigDir = path.join(Root.pluginPath, 'config', 'default_config')
 const clone = <T>(value: T): T => structuredClone(value)
 
+type ConfigCacheEntry = {
+  mtimeMs: number
+  size: number
+  parsed: Record<string, unknown>
+}
+
+/** 按文件 mtimeMs + size 缓存已解析的 YAML，命中时跳过读盘和解析，改文件后立即失效 */
+const configCache = new Map<ConfigName, ConfigCacheEntry>()
+
 const merge = <T extends Record<string, unknown>>(base: T, override: Partial<T>): T => {
   const result: Record<string, unknown> = clone(base)
   for (const [key, value] of Object.entries(override || {})) {
@@ -41,9 +50,27 @@ const readConfig = <T extends ConfigName>(name: T): HiraConfig[T] => {
   const fallback = defaultConfig[name]
   try {
     const file = path.join(userConfigDir, `${name}.yaml`)
-    if (!fs.existsSync(file)) return fallback
-    const parsed = requireFileSync(file, { force: true })
-    return merge(fallback as Record<string, unknown>, parsed as Record<string, unknown>) as HiraConfig[T]
+    if (!fs.existsSync(file)) {
+      configCache.delete(name)
+      return fallback
+    }
+
+    let stat: fs.Stats | undefined
+    try {
+      stat = fs.statSync(file)
+    } catch {
+      stat = undefined
+    }
+
+    const cached = stat ? configCache.get(name) : undefined
+    if (stat && cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      // 命中缓存：直接用缓存的解析结果 merge，merge 内部会 clone，保证每次返回全新对象
+      return merge(fallback as Record<string, unknown>, cached.parsed) as HiraConfig[T]
+    }
+
+    const parsed = requireFileSync(file, { force: true }) as Record<string, unknown>
+    if (stat) configCache.set(name, { mtimeMs: stat.mtimeMs, size: stat.size, parsed })
+    return merge(fallback as Record<string, unknown>, parsed) as HiraConfig[T]
   } catch (error) {
     logger.warn(`[karin-plugin-hira] 读取配置 ${name}.yaml 失败，使用默认配置: ${error}`)
     return fallback

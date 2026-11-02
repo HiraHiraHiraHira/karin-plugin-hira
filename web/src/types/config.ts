@@ -15,7 +15,6 @@ export type ConfigType = {
     sessionTtlSeconds: number
     voiceEnabled: boolean
     highQuality: boolean
-    textFallback: boolean
     cookies: {
       netease: string
       qq: string
@@ -32,7 +31,6 @@ export type ConfigType = {
     enabled: boolean
     kkkCompat: boolean
     commentsEnabled: boolean
-    priority: number
     maxVideoDurationSeconds: number
     platforms: {
       bilibili: boolean
@@ -84,6 +82,7 @@ export type ConfigType = {
     ffprobePath: string
     downloadTimeoutSeconds: number
     maxVideoFileSizeBytes: number
+    maxAudioFileSizeBytes: number
     maxPreviewCoverBytes: number
     maxTempBytes: number
   }

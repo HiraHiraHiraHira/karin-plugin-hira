@@ -7,11 +7,9 @@ export const musicReg = /^(?!#?(?:(?:点歌|音乐)(?:ck|cookie)(?:检查|状态
 export const musicCookieReg = /^#?(?:提交(?:音乐|点歌)(?:ck|cookie)\s+\S+\s+[\s\S]+|(?:点歌|音乐)(?:ck|cookie)(?:检查|状态))$/i
 
 export const musicCookie = karin.command(musicCookieReg, handleMusicCookieMessage, {
-  name: 'Hira-音乐Cookie',
-  priority: 690
+  name: 'Hira-音乐Cookie'
 })
 
 export const music = karin.command(musicReg, handleMusicMessage, {
-  name: 'Hira-点歌',
-  priority: 700
+  name: 'Hira-点歌'
 })

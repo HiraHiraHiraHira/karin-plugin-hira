@@ -22,6 +22,16 @@ const buildHeaders = (options: FetchJsonOptions) => ({
   ...options.headers
 })
 
+// 取原始错误的可读文案，包中文网络错误时把英文细节附在后面便于排查
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+// 调用方主动取消/中止类错误：原样抛出，不包成中文网络错误
+const isAbortLike = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false
+  const { name, code } = error as { name?: unknown, code?: unknown }
+  return name === 'AbortError' || name === 'CanceledError' || code === 'ERR_CANCELED'
+}
+
 export const toAxiosProxy = (proxy: string) => {
   let parsed: URL
   try {
@@ -69,6 +79,10 @@ const requestViaProxy = async (url: string, options: FetchJsonOptions): Promise<
     maxRedirects: options.maxRedirects ?? (options.redirect === 'manual' ? 0 : 5),
     signal: options.signal,
     validateStatus: () => true
+  }).catch((error: unknown) => {
+    // 网络层失败统一包中文，保留原始英文细节；主动取消仍原样抛出
+    if (isAbortLike(error)) throw error
+    throw new Error(`网络请求失败：${errorMessage(error)}`)
   })
 
   const data = Buffer.isBuffer(response.data) ? response.data : Buffer.from(response.data || '')
@@ -82,28 +96,57 @@ const requestViaProxy = async (url: string, options: FetchJsonOptions): Promise<
   })
 }
 
+// 合并调用方 signal 与本地超时：两者任一触发都会中止请求，且能区分是超时还是调用方主动取消
+const createAbortSignal = (timeoutMs: number, external?: AbortSignal) => {
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const onExternalAbort = () => controller.abort()
+  if (external) {
+    if (external.aborted) controller.abort()
+    else external.addEventListener('abort', onExternalAbort, { once: true })
+  }
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timer)
+      external?.removeEventListener('abort', onExternalAbort)
+    }
+  }
+}
+
 export const fetchResponse = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
   if (options.proxy?.trim()) return requestViaProxy(url, options)
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
+  const timeoutMs = options.timeoutMs ?? 15_000
+  const { signal, didTimeout, cleanup } = createAbortSignal(timeoutMs, options.signal)
+  let response: Response
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       method: options.method,
       body: options.body,
       headers: buildHeaders(options),
       redirect: options.redirect,
-      signal: options.signal ?? controller.signal
+      signal
     })
-    const contentLength = Number(response.headers.get('content-length'))
-    if (options.maxBytes !== undefined && Number.isFinite(contentLength) && contentLength > options.maxBytes) {
-      await response.body?.cancel()
-      throw new Error(`响应超过 ${options.maxBytes} 字节限制`)
-    }
-    return response
+  } catch (error) {
+    if (didTimeout()) throw new Error(`请求超时（${timeoutMs} ms）`)
+    if (isAbortLike(error)) throw error
+    throw new Error(`网络请求失败：${errorMessage(error)}`)
   } finally {
-    clearTimeout(timeout)
+    cleanup()
   }
+
+  const contentLength = Number(response.headers.get('content-length'))
+  if (options.maxBytes !== undefined && Number.isFinite(contentLength) && contentLength > options.maxBytes) {
+    await response.body?.cancel()
+    throw new Error(`响应超过 ${options.maxBytes} 字节限制`)
+  }
+  return response
 }
 
 export const readResponseBytes = async (response: Response, maxBytes?: number) => {
@@ -118,14 +161,21 @@ export const readResponseBytes = async (response: Response, maxBytes?: number) =
 }
 
 const assertOk = (response: Response) => {
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (!response.ok) throw new Error(`接口返回 HTTP ${response.status}`)
 }
 
 export const fetchJson = async <T = unknown>(url: string, options: FetchJsonOptions = {}): Promise<T> => {
   const response = await fetchResponse(url, options)
   assertOk(response)
   const bytes = await readResponseBytes(response, options.maxBytes)
-  return JSON.parse(bytes.toString('utf8')) as T
+  const text = bytes.toString('utf8')
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    // 上游可能返回 HTML 风控页，原生 JSON.parse 英文报错不能进群，这里换成中文具体文案
+    const preview = text.slice(0, 60).replace(/\s+/g, ' ')
+    throw new Error(`接口返回的不是 JSON（HTTP ${response.status}，开头：${preview}）`)
+  }
 }
 
 export const fetchText = async (url: string, options: FetchJsonOptions = {}): Promise<string> => {

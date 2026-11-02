@@ -11,7 +11,14 @@ export type FfmpegBuildOptions =
   | {
       input: string
       output: string
-      format: Exclude<FfmpegFormat, 'merge'>
+      format: Exclude<FfmpegFormat, 'merge' | 'voice'>
+    }
+  | {
+      input: string
+      output: string
+      format: 'voice'
+      /** 高音质：双声道 48kHz 128kbps，默认单声道 24kHz 32kbps */
+      highQuality?: boolean
     }
   | {
       videoInput: string
@@ -72,13 +79,13 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
       options.input,
       '-vn',
       '-ac',
-      '1',
+      options.highQuality ? '2' : '1',
       '-ar',
-      '24000',
+      options.highQuality ? '48000' : '24000',
       '-codec:a',
       'libopus',
       '-b:a',
-      '32k',
+      options.highQuality ? '128k' : '32k',
       options.output
     ]
   }

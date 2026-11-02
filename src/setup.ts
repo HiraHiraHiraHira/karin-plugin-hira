@@ -3,6 +3,7 @@ import { karinPathBase } from 'node-karin/root'
 
 import './apps/help'
 import './apps/light'
+import './apps/maintenance'
 import './apps/music'
 import './apps/musicCardStatus'
 import './apps/resolvers'

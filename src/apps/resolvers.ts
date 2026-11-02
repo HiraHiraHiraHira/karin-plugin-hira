@@ -1,6 +1,5 @@
 import karin from 'node-karin'
 
-import { Config } from '@/config'
 import { handleResolverMessage } from '@/resolvers/controller'
 
 const resolverDomainPattern = [
@@ -31,6 +30,5 @@ export const resolverReg = new RegExp(
 )
 
 export const resolvers = karin.command(resolverReg, handleResolverMessage, {
-  name: 'Hira-多平台解析',
-  priority: Config.resolver.priority
+  name: 'Hira-多平台解析'
 })

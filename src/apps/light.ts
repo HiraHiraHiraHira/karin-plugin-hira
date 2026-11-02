@@ -32,6 +32,5 @@ export const light = karin.command(lightReg, async (e, next) => {
   }
   return true
 }, {
-  name: 'Hira-轻量命令',
-  priority: 680
+  name: 'Hira-轻量命令'
 })

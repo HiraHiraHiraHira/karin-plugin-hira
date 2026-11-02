@@ -16,7 +16,6 @@ export const defaultConfig: HiraConfig = {
     sessionTtlSeconds: 180,
     voiceEnabled: true,
     highQuality: false,
-    textFallback: true,
     card: {
       channels: ['platform', 'ark', 'music'],
       textFallback: true,
@@ -75,7 +74,6 @@ export const defaultConfig: HiraConfig = {
     enabled: true,
     kkkCompat: true,
     commentsEnabled: true,
-    priority: 900,
     maxVideoDurationSeconds: 480,
     platforms: {
       bilibili: true,
@@ -132,6 +130,7 @@ export const defaultConfig: HiraConfig = {
     ffprobePath: 'ffprobe',
     downloadTimeoutSeconds: 60,
     maxVideoFileSizeBytes: 200 * 1024 * 1024,
+    maxAudioFileSizeBytes: 100 * 1024 * 1024,
     maxPreviewCoverBytes: 10 * 1024 * 1024,
     maxTempBytes: 2 * 1024 * 1024 * 1024
   },

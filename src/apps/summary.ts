@@ -21,6 +21,5 @@ export const summary = karin.command(summaryReg, async (e, next) => {
   return true
 }, {
   name: 'Hira-AI总结',
-  priority: 660,
   perm: 'admin'
 })

@@ -24,6 +24,42 @@ describe('buildFfmpegArgs', () => {
     expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toContain('1')
   })
 
+  it('keeps the default low-quality voice args unchanged', () => {
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toEqual([
+      '-y',
+      '-i',
+      'in.mp3',
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      '24000',
+      '-codec:a',
+      'libopus',
+      '-b:a',
+      '32k',
+      'out.ogg'
+    ])
+  })
+
+  it('builds high-quality voice args with stereo 48kHz 128kbps', () => {
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice', highQuality: true })).toEqual([
+      '-y',
+      '-i',
+      'in.mp3',
+      '-vn',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-codec:a',
+      'libopus',
+      '-b:a',
+      '128k',
+      'out.ogg'
+    ])
+  })
+
   it('builds stream-copy merge args for separated video and audio tracks', () => {
     expect(buildFfmpegArgs({
       videoInput: 'video.m4s',

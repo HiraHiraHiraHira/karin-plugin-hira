@@ -118,8 +118,9 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
         return true
       }
       const playable = await getProvider(item.source).getPlayable(item)
+      const highQuality = Boolean(command.highQuality || Config.music.highQuality)
       try {
-        await replyVoiceFileOrAudio(e, playable, await transcodePlayableToVoice(playable))
+        await replyVoiceFileOrAudio(e, playable, await transcodePlayableToVoice(playable, { highQuality }))
       } catch {
         await replyVoiceFileOrAudio(e, playable)
       }

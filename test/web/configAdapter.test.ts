@@ -46,7 +46,6 @@ describe('web config adapter', () => {
           musicPageSize: '6'
         },
         {
-          resolverPriority: '950',
           resolverKkkCompat: false,
           resolverCommentsEnabled: false,
           resolverMaxVideoDurationMinutes: '12',
@@ -73,7 +72,6 @@ describe('web config adapter', () => {
       app: { enabled: false, replyPrefix: 'Hira' },
       music: { defaultSource: 'qq', pageSize: '6' },
       resolver: {
-        priority: '950',
         kkkCompat: false,
         commentsEnabled: false,
         maxVideoDurationSeconds: 720,

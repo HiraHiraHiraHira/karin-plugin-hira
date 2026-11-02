@@ -151,10 +151,6 @@ describe('createWebConfigComponents', () => {
   })
 
   it('allows numeric defaults used by resolver and runtime settings', () => {
-    expect(findComponent('resolverPriority')).toMatchObject({
-      defaultValue: '900',
-      rules: [{ min: 0, max: 9999 }]
-    })
     expect(findComponent('resolverMaxVideoDurationMinutes')).toMatchObject({
       label: '通用视频上限分钟',
       defaultValue: '8',

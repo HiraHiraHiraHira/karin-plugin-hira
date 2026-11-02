@@ -55,4 +55,16 @@ describe('Hira config validation', () => {
       'config.music 不能为空'
     ]))
   })
+
+  it('rejects the removed music.textFallback and resolver.priority options', () => {
+    const legacy = structuredClone(defaultConfig) as unknown as
+      { music: Record<string, unknown>, resolver: Record<string, unknown> } & typeof defaultConfig
+    legacy.music.textFallback = true
+    legacy.resolver.priority = 900
+
+    expect(validateHiraConfig(legacy)).toEqual(expect.arrayContaining([
+      'config.music.textFallback 不是受支持的配置项',
+      'config.resolver.priority 不是受支持的配置项'
+    ]))
+  })
 })

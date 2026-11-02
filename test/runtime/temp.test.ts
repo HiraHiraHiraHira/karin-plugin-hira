@@ -2,11 +2,19 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { karinPathTemp } from 'node-karin/root'
 import { describe, expect, it } from 'vitest'
 
-import { cleanupOldFiles, ensureTempDir, getTempUsageBytes, isSubPath } from '@/runtime/temp'
+import { cleanupOldFiles, defaultTempRoot, ensureTempDir, getTempUsageBytes, isSubPath } from '@/runtime/temp'
 
 describe('runtime temp helpers', () => {
+  it('默认临时目录放在协议端可见的 Karin 共享 temp 下', () => {
+    const root = defaultTempRoot()
+
+    expect(isSubPath(karinPathTemp, root)).toBe(true)
+    expect(path.basename(root)).toBe('karin-plugin-hira')
+  })
+
   it('creates named temp directories under the configured root', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hira-temp-'))
     const dir = ensureTempDir(root, 'music')

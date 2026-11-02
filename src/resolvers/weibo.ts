@@ -311,7 +311,7 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
       })
       status = data.data
     }
-    if (!status) throw new Error('empty api data')
+    if (!status) throw new Error('微博接口没有返回数据')
     const requestId = weiboStatusRequestId(status, id)
     status = await enrichWeiboLongText(requestId, status, headers)
 
@@ -326,16 +326,21 @@ export const resolveWeibo = async (url: string, cookie = ''): Promise<ResolverRe
     }
 
     return normalizeWeiboStatus(url, status, comments)
-  } catch {
-    const html = await fetchResolverText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
-    const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '微博')
-    return {
-      platform: 'weibo',
-      displayName: '微博',
-      title,
-      pageUrl: url,
-      videos: [],
-      images: []
+  } catch (error) {
+    try {
+      const html = await fetchResolverText(`https://m.weibo.cn/detail/${encodeURIComponent(id)}`, { headers })
+      const title = stripHtml(html.match(/<title>(.*?)<\/title>/i)?.[1] || '微博')
+      return {
+        platform: 'weibo',
+        displayName: '微博',
+        title,
+        pageUrl: url,
+        videos: [],
+        images: []
+      }
+    } catch {
+      // 兜底详情页也拿不到时，把最初的中文错误交给上层展示成失败卡片
+      throw error
     }
   }
 }

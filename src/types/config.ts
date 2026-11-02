@@ -59,7 +59,6 @@ export type MusicConfig = {
   sessionTtlSeconds: number
   voiceEnabled: boolean
   highQuality: boolean
-  textFallback: boolean
   card: MusicCardConfig
   bilibili: {
     appKey: string
@@ -85,7 +84,6 @@ export type ResolverConfig = {
   enabled: boolean
   kkkCompat: boolean
   commentsEnabled: boolean
-  priority: number
   maxVideoDurationSeconds: number
   platforms: {
     bilibili: boolean
@@ -138,6 +136,7 @@ export type RuntimeConfig = {
   ffprobePath: string
   downloadTimeoutSeconds: number
   maxVideoFileSizeBytes: number
+  maxAudioFileSizeBytes: number
   maxPreviewCoverBytes: number
   maxTempBytes: number
 }

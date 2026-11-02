@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { karinPathBase } from 'node-karin/root'
+import { karinPathBase, karinPathTemp } from 'node-karin/root'
 
 import { Config } from '@/config'
 import { Root } from '@/root'
@@ -17,7 +17,13 @@ type TempFileEntry = {
   mtimeMs: number
 }
 
-export const defaultTempRoot = () => path.join(karinPathBase, Root.pluginName, 'data', 'temp')
+/**
+ * 默认临时目录放在 Karin 的共享 temp 下（`@karinjs/temp/<插件名>`），不是插件自己的 data 目录。
+ * 视频、语音这类要交给协议端读取的文件必须让协议端看得见：NapCat 的 checkUriType 对裸路径
+ * 先做 existsSync，取不到就判成 Unknown 直接拒收（retcode 1200「文件处理失败: 识别URL失败」）。
+ * 本机部署只把 `@karinjs/temp` 挂进了 napcat 容器，所以放在这里才发得出去。
+ */
+export const defaultTempRoot = () => path.join(karinPathTemp, Root.pluginName)
 
 export const getTempRoot = () => Config.runtime.tempRoot.trim() || defaultTempRoot()
 

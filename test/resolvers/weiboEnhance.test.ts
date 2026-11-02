@@ -220,4 +220,46 @@ describe('weibo enhanced normalization', () => {
       { type: 'text', text: '接口返回的完整长文' }
     ])
   })
+
+  it('falls back to the detail page title when the weibo api returns no data', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('https://m.weibo.cn/detail/')) {
+        return new Response('<html><head><title>微博 - 随时随地发现新鲜事</title></head></html>', { status: 200 })
+      }
+      if (url.startsWith('https://m.weibo.cn/statuses/show')) {
+        return new Response(JSON.stringify({ data: null }), { status: 200 })
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await resolveWeibo('https://weibo.com/1886633831/R47877p8L')
+
+    expect(result).toMatchObject({
+      platform: 'weibo',
+      displayName: '微博',
+      title: '微博 - 随时随地发现新鲜事',
+      images: [],
+      videos: []
+    })
+    expect('ok' in result).toBe(false)
+  })
+
+  it('surfaces a Chinese reason when the weibo api returns no data', async () => {
+    let detailCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('https://m.weibo.cn/detail/')) {
+        detailCalls += 1
+        if (detailCalls === 1) return new Response('<html></html>', { status: 200 })
+        throw new Error('网络请求失败：fetch failed')
+      }
+      if (url.startsWith('https://m.weibo.cn/statuses/show')) {
+        return new Response(JSON.stringify({ data: null }), { status: 200 })
+      }
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(resolveWeibo('https://weibo.com/1886633831/R47877p8L')).rejects.toThrow('微博接口没有返回数据')
+  })
 })

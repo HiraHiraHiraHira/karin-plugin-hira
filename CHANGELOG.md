@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-11-02
+
+### Added
+
+- 新增每小时一次的临时目录清理任务 `hira-临时清理`（受 `runtime.cleanupEnabled` 控制），临时目录不再只靠 `#清理垃圾` 手动清；WebUI 与自定义配置页的开关说明同步改成「每小时一次」。
+- 新增 `runtime.maxAudioFileSizeBytes`（默认 100 MiB），语音点歌的源音频下载受体积上限约束，不再无限制下载。
+
+### Changed
+
+- `music.highQuality` 与 `#高清语音N` 真正生效：开启后语音转码用 128kbps 双声道 48kHz，关闭时保持原来的 32kbps 单声道 24kHz；自定义配置页的开关文案改为「高品质语音」。
+- 语音转码结束后立即删除临时源文件，失败时同时清理半成品，不再每次语音点歌残留两个文件。
+- 聚合音源兜底查询把剩余预算算进单次请求超时，整体耗时回到 8 秒预算内（此前已在飞的请求可把总耗时拖到约 10 秒）。
+- `Config` 读取按配置文件 mtime + size 缓存，改 YAML 仍然立即生效，但同一次操作不会再读到不同版本。
+- 移除无效配置项：`resolver.priority`（Karin 1.18.0 的排序按加载顺序生效，`priority`/`rank` 都不参与排序）和顶层 `music.textFallback`（从未被读取，生效的是 `music.card.textFallback`）。同步清理 `karin.command` 上不生效的 `priority` 选项、WebUI 表单、自定义配置页、配置校验和 README 说明。
+
+### Fixed
+
+- **临时文件默认目录从插件私有 `data/temp` 改到 Karin 共享的 `@karinjs/temp/<插件名>`**：NapCat 处理裸文件路径时会先判断文件在不在，插件私有目录没挂进协议端容器 → 判成未知类型直接拒收（`retcode 1200 文件处理失败: 识别URL失败`），语音消息和解析视频都会发不出去、只剩降级内容。`runtime.tempRoot` 仍可覆盖，改到别处时要给协议端容器挂同一路径。
+- 用户可见报错中文化：`fetchJson` 的 `JSON.parse` 失败不再把 `Unexpected token '<', "<!doctype "... is not valid JSON` 抛进群里，改为「接口返回的不是 JSON（HTTP xxx，开头：…）」；请求超时改为「请求超时（N ms）」；网络层错误统一加「网络请求失败：」前缀；非 2xx 改为「接口返回 HTTP xxx」；微博解析的 `empty api data` 改为中文，并在兜底详情页也失败时让该错误真正浮现到解析失败卡片。
+- 修复 `fetchResponse` 在调用方传入 `signal` 时本地超时完全失效的问题，现在两者同时生效且能区分「超时」与「调用方主动取消」。
+- 限制内存中保留的点歌会话数（默认 500）和网页总结限流状态条目数（默认 500），超出按最旧淘汰；新增会话 `sweep()`。
+
 ## 2026-11-01
 
 ### Added
