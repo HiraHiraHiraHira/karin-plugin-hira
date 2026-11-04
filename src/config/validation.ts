@@ -111,7 +111,7 @@ const validateEnum = (value: unknown, label: string, allowed: string[]) => {
     : `${label} 必须是 ${allowed.join('、')} 之一`
 }
 
-const cardChannels = ['platform', 'ark', 'music']
+const cardChannels = ['platform', 'oidb', 'ark', 'music']
 const platformCardTypes = ['qq', '163', 'kugou', 'kuwo', 'migu']
 
 const validateCardChannels = (value: unknown) => {

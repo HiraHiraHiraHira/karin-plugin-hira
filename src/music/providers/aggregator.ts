@@ -36,7 +36,7 @@ type CacheEntry = { at: number, songs: AggregatorSong[] }
 
 /** 单次请求超时、兜底查询总预算、结果缓存：上游不稳，既别把命令拖死，也别把人家打爆 */
 const requestTimeoutMs = 5_000
-const overallBudgetMs = 8_000
+const overallBudgetMs = 6_000
 const cacheTtlMs = 120_000
 const cache = new Map<string, CacheEntry>()
 
@@ -142,7 +142,7 @@ export const aggregatorAudioUrl = async (item: MusicItem, requestJson: RequestJs
 
   for (const keyword of keywords) {
     // 聚合音源偶发空结果（上游不稳定），重试有上限，且整体不超过预算，别把点歌拖成几十秒
-    for (let attempt = 1; attempt <= 3 && withinBudget(); attempt += 1) {
+    for (let attempt = 1; attempt <= 2 && withinBudget(); attempt += 1) {
       try {
         const songs = await request(keyword, type, 1, requestJson, remainingBudgetTimeout())
         const usable = songs.filter(song => isAudioUrl(song.url))
@@ -151,13 +151,13 @@ export const aggregatorAudioUrl = async (item: MusicItem, requestJson: RequestJs
         const prefixed = usable.filter(song => normalizeText(song.title || '').startsWith(targetTitle))
         const candidates = exact.length > 0 ? exact : prefixed
         if (candidates.length === 0) {
-          await new Promise(resolve => setTimeout(resolve, 250))
+          await new Promise(resolve => setTimeout(resolve, 120))
           continue
         }
 
         return (candidates.find(sameArtist) ?? candidates[0])!.url
       } catch {
-        await new Promise(resolve => setTimeout(resolve, 250))
+        await new Promise(resolve => setTimeout(resolve, 120))
       }
     }
   }

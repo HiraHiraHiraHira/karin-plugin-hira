@@ -47,6 +47,39 @@ const profileUrl = 'https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg
 /** 旧版搜索接口：不需要登录态，musicu 桌面搜索未登录时返回 2001 空列表，用它兜底 */
 const legacySearchUrl = 'https://c.y.qq.com/soso/fcgi-bin/client_search_cp'
 
+/**
+ * 直链缓存：vkey 有有效期（数小时），10 分钟内复用是安全的。
+ * 同一首歌被反复点（或列表里来回选）时省掉一次 vkey + 聚合查询。
+ */
+const playableCache = new Map<string, { at: number, audioUrl: string }>()
+const playableCacheTtlMs = 10 * 60_000
+const playableCacheMax = 300
+
+export const resetQQPlayableCache = () => playableCache.clear()
+
+const playableCacheKey = (item: MusicItem) => {
+  const aggregator = (item.raw as { aggregatorUrl?: string } | undefined)?.aggregatorUrl
+  return `${item.id}:${aggregator ? 'aggregator' : 'native'}`
+}
+
+const readPlayableCache = (item: MusicItem) => {
+  const entry = playableCache.get(playableCacheKey(item))
+  if (!entry) return undefined
+  if (Date.now() - entry.at > playableCacheTtlMs) {
+    playableCache.delete(playableCacheKey(item))
+    return undefined
+  }
+  return entry.audioUrl
+}
+
+const writePlayableCache = (item: MusicItem, audioUrl: string) => {
+  playableCache.set(playableCacheKey(item), { at: Date.now(), audioUrl })
+  if (playableCache.size > playableCacheMax) {
+    const oldest = [...playableCache.entries()].sort((a, b) => a[1].at - b[1].at)[0]
+    if (oldest) playableCache.delete(oldest[0])
+  }
+}
+
 const asRecord = (value: unknown): Record<string, unknown> => {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
@@ -211,10 +244,13 @@ export class QQProvider implements MusicProvider {
   }
 
   async search(keyword: string, page: number, pageSize: number): Promise<MusicItem[]> {
-    const official = await this.searchOfficial(keyword, page, pageSize)
+    // 官方接口未登录态常返回空、旧接口不需要登录态：两者并行发，官方结果优先，
+    // 这样失败时不用再串行等第二次请求，点歌响应能省 1~2 秒
+    const [official, legacy] = await Promise.all([
+      this.searchOfficial(keyword, page, pageSize),
+      this.searchLegacy(keyword, page, pageSize)
+    ])
     if (official.length > 0) return official
-
-    const legacy = await this.searchLegacy(keyword, page, pageSize)
     if (legacy.length > 0) return legacy
 
     const aggregated = await aggregatorSearch('qq', keyword, page, pageSize, this.requestJson)
@@ -225,7 +261,7 @@ export class QQProvider implements MusicProvider {
     throw new Error('QQ音乐搜索暂时不可用，可以试试「#网易点歌 歌名」或稍后再试')
   }
 
-  async getPlayable(item: MusicItem): Promise<MusicPlayable> {
+  private async resolvePlayable(item: MusicItem): Promise<MusicPlayable> {
     try {
       const data = await this.requestJson(musicuUrl, {
         method: 'POST',
@@ -264,6 +300,14 @@ export class QQProvider implements MusicProvider {
       item,
       audioUrl: requirePlayableUrl(audioUrl)
     }
+  }
+
+  async getPlayable(item: MusicItem): Promise<MusicPlayable> {
+    const cached = readPlayableCache(item)
+    if (cached) return { item, audioUrl: cached }
+    const playable = await this.resolvePlayable(item)
+    writePlayableCache(item, playable.audioUrl)
+    return playable
   }
 
   async getLyrics(item: MusicItem): Promise<string | undefined> {

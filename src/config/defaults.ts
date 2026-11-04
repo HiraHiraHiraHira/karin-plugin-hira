@@ -17,7 +17,7 @@ export const defaultConfig: HiraConfig = {
     voiceEnabled: true,
     highQuality: false,
     card: {
-      channels: ['platform', 'ark', 'music'],
+      channels: ['platform', 'oidb', 'ark', 'music'],
       textFallback: true,
       platform: {
         enabled: true,
@@ -32,8 +32,8 @@ export const defaultConfig: HiraConfig = {
       ark: {
         apiUrl: 'https://apii.xianyuw.cn/api/v1/qq-musicArk',
         key: '',
-        timeoutMs: 5000,
-        retries: 1,
+        timeoutMs: 3000,
+        retries: 0,
         attachCover: false,
         formats: {
           qq: 'qq',
@@ -42,6 +42,9 @@ export const defaultConfig: HiraConfig = {
           kugou: 'kugou',
           bilibili: 'bilibili'
         }
+      },
+      oidb: {
+        enabled: true
       },
       music: {
         enabled: true

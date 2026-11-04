@@ -7,7 +7,7 @@ export type AppConfig = {
   statusCommand: string
 }
 
-export type MusicCardChannel = 'platform' | 'ark' | 'music'
+export type MusicCardChannel = 'platform' | 'oidb' | 'ark' | 'music'
 
 export type MusicCardConfig = {
   /** 发送通道优先级，前面的失败自动降级到后面 */
@@ -41,6 +41,10 @@ export type MusicCardConfig = {
       kugou: string
       bilibili: string
     }
+  }
+  oidb: {
+    /** 走 OIDB 0xb77_9 自己拼包发卡：不依赖第三方签名服务，失败有回执 */
+    enabled: boolean
   }
   music: {
     enabled: boolean

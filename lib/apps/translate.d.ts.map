@@ -1,1 +1,1 @@
-{"version":3,"file":"translate.d.ts","names":["translate","node_karin10","MessageEventMap","Command","node_karin10","translate","Command","MessageEventMap"],"sources":["../../../src/apps/translate.ts"],"mappings":";;;A,cAUaA,S,EAASC,YAAAA,CAAAE,O,OAcpBF,YAAAA,CAdoBC,e"}
+{"version":3,"file":"translate.d.ts","names":["translate","node_karin8","MessageEventMap","Command","node_karin8","translate","Command","MessageEventMap"],"sources":["../../../src/apps/translate.ts"],"mappings":";;;A,cAUaA,S,EAASC,WAAAA,CAAAE,O,OAcpBF,WAAAA,CAdoBC,e"}

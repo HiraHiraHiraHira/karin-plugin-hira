@@ -6,15 +6,16 @@ import { formatArtists } from '@/music/providers/helpers'
 import type { MusicItem, MusicPlayable } from '@/music/types'
 import type { MusicCardConfig } from '@/types/config'
 import { fetchJson } from '@/services/http'
+import { oidbSupportedSource, sendOidbMusicCard } from '@/services/musicOidb'
 
 type ReplyPayload = Parameters<Message['reply']>[0]
-type MusicCardChannel = 'platform' | 'ark' | 'music'
+type MusicCardChannel = 'platform' | 'oidb' | 'ark' | 'music'
 
 type ChannelStats = { ok: number, fail: number, skip: number }
 type BreakerState = { failures: number, blockedUntil: number, lastCause?: string }
 type RecentRecord = { at: number, channel: MusicCardChannel, ok: boolean, ms: number, title: string, cause?: string }
 
-const cardChannels: MusicCardChannel[] = ['platform', 'ark', 'music']
+const cardChannels: MusicCardChannel[] = ['platform', 'oidb', 'ark', 'music']
 const arkRequiredFields = ['app', 'meta', 'prompt', 'view']
 const recentLimit = 20
 const causeLimit = 120
@@ -23,6 +24,7 @@ const arkMaxBytes = 256 * 1024
 const breakers = new Map<MusicCardChannel, BreakerState>()
 const stats: Record<MusicCardChannel, ChannelStats> = {
   platform: { ok: 0, fail: 0, skip: 0 },
+  oidb: { ok: 0, fail: 0, skip: 0 },
   ark: { ok: 0, fail: 0, skip: 0 },
   music: { ok: 0, fail: 0, skip: 0 }
 }
@@ -46,9 +48,11 @@ export const cardChannelOrder = (card: MusicCardConfig = cardConfig()): MusicCar
 }
 
 /**
- * 熔断只作用于可观测通道（ark）。platform / music 是哑通道，协议端静默丢弃元素时插件无从感知，
- * 所以它们只做异常计数，不参与熔断。
+ * 熔断只作用于可观测通道（oidb / ark）：它们有明确回执，连续失败说明上游确实坏了。
+ * platform / music 是哑通道，协议端静默丢弃元素时插件无从感知，只记失败计数、不参与熔断。
  */
+const observableChannels = new Set<MusicCardChannel>(['oidb', 'ark'])
+
 const breakerState = (channel: MusicCardChannel): BreakerState => {
   const current = breakers.get(channel)
   if (current) return current
@@ -58,7 +62,7 @@ const breakerState = (channel: MusicCardChannel): BreakerState => {
 }
 
 export const channelBlocked = (channel: MusicCardChannel, card: MusicCardConfig = cardConfig()) => {
-  if (channel !== 'ark') return false
+  if (!observableChannels.has(channel)) return false
   const state = breakerState(channel)
   const { failThreshold, cooldownSeconds } = card.breaker
   if (state.failures < Math.max(1, failThreshold)) return false
@@ -67,7 +71,7 @@ export const channelBlocked = (channel: MusicCardChannel, card: MusicCardConfig 
   state.failures = 0
   state.blockedUntil = 0
   state.lastCause = undefined
-  logger.info('[Hira-卡片] 通道=ark 熔断冷却结束，恢复尝试')
+  logger.info(`[Hira-卡片] 通道=${channel} 熔断冷却结束，恢复尝试`)
   return false
 }
 
@@ -92,14 +96,14 @@ const recordFailure = (channel: MusicCardChannel, cause: string, ms: number, tit
   pushRecent({ at: now(), channel, ok: false, ms, title, cause: trimmed })
   logger.warn(`[Hira-卡片] 通道=${channel} 结果=fail 耗时=${ms}ms 曲目=${title} cause=${trimmed}`)
 
-  if (channel !== 'ark') return
+  if (!observableChannels.has(channel)) return
   const state = breakerState(channel)
   state.failures += 1
   state.lastCause = trimmed
   const { failThreshold, cooldownSeconds } = card.breaker
   if (state.failures >= Math.max(1, failThreshold)) {
     state.blockedUntil = now() + Math.max(10, cooldownSeconds) * 1000
-    logger.warn(`[Hira-卡片] 通道=ark 连续失败 ${state.failures} 次，熔断 ${cooldownSeconds}s`)
+    logger.warn(`[Hira-卡片] 通道=${channel} 连续失败 ${state.failures} 次，熔断 ${cooldownSeconds}s`)
   }
 }
 
@@ -139,6 +143,14 @@ const arkSkipReason = (playable: MusicPlayable, card: MusicCardConfig) => {
   if (!playable.audioUrl) return '缺少音频直链'
   if (!playable.item.coverUrl) return '缺少封面'
   if (channelBlocked('ark', card)) return '熔断中'
+  return undefined
+}
+
+const oidbSkipReason = (playable: MusicPlayable, card: MusicCardConfig) => {
+  if (card.oidb?.enabled === false) return '通道已关闭'
+  if (!oidbSupportedSource(playable.item.source)) return `平台 ${playable.item.source} 不支持 OIDB 卡片`
+  if (!playable.audioUrl) return '缺少音频直链'
+  if (channelBlocked('oidb', card)) return '熔断中'
   return undefined
 }
 
@@ -248,9 +260,19 @@ export const sendMusicCard = async (e: Message, playable: MusicPlayable) => {
       }
     }
 
+    if (channel === 'oidb') {
+      const reason = oidbSkipReason(playable, card)
+      if (reason) {
+        // 「平台不支持 OIDB」是静态能力决定，不必每条都刷日志
+        recordSkip('oidb', title, reason, reason !== '通道已关闭' && !reason.endsWith('不支持 OIDB 卡片'))
+        continue
+      }
+    }
+
     const start = now()
     try {
       if (channel === 'platform') await sendPlatformCard(e, playable, card)
+      else if (channel === 'oidb') await sendOidbMusicCard(e, playable)
       else if (channel === 'ark') await sendArkCard(e, playable, card)
       else await sendMusicSegment(e, playable, card)
       recordSuccess(channel, now() - start, title)
@@ -270,6 +292,7 @@ export const sendMusicCard = async (e: Message, playable: MusicPlayable) => {
 export const cardStatusSnapshot = () => {
   const card = cardConfig()
   const ark = breakerState('ark')
+  const oidb = breakerState('oidb')
   return {
     order: cardChannelOrder(card),
     textFallback: card.textFallback,
@@ -281,6 +304,10 @@ export const cardStatusSnapshot = () => {
     arkBlocked: channelBlocked('ark', card),
     arkFailures: ark.failures,
     arkLastCause: ark.lastCause,
+    oidbEnabled: card.oidb?.enabled !== false,
+    oidbBlocked: channelBlocked('oidb', card),
+    oidbFailures: oidb.failures,
+    oidbLastCause: oidb.lastCause,
     breaker: card.breaker,
     stats,
     recent
