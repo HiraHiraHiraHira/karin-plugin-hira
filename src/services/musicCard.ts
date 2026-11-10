@@ -235,8 +235,20 @@ export const sendMusicCard = async (e: Message, playable: MusicPlayable) => {
   const card = cardConfig()
   const title = playable.item.title
   const failures: string[] = []
+  /**
+   * Milky 没有 platform music 段，也没有 send_packet。这三条通道在 Milky 下会被
+   * 适配器转成文本并「假成功」，导致 ark 通道永远轮不到，所以按协议能力跳过，
+   * 只保留 ark 与末尾的文本兜底。
+   */
+  const standard = (e.bot as unknown as { adapter?: { standard?: string } })?.adapter?.standard
+  const milky = standard === 'milky'
 
   for (const channel of cardChannelOrder(card)) {
+    if (milky && channel !== 'ark') {
+      recordSkip(channel, title, 'Milky 协议不支持该通道', false)
+      continue
+    }
+
     if (channel === 'music' && !card.music.enabled) {
       recordSkip('music', title, '通道已关闭')
       continue

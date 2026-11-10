@@ -1,4 +1,4 @@
-import * as node_karin0 from "node-karin";
+import * as node_karin9 from "node-karin";
 
 // src/apps/maintenance.d.ts
 
@@ -10,7 +10,7 @@ import * as node_karin0 from "node-karin";
  *
  * `cleanupRuntimeTemp` 内部会读 `runtime.cleanupEnabled`，开关关闭时不做任何清理。
  */
-declare const tempCleanup: node_karin0.Task;
+declare const tempCleanup: node_karin9.Task;
 //# sourceMappingURL=maintenance.d.ts.map
 export { tempCleanup };
 //# sourceMappingURL=maintenance.d.ts.map
