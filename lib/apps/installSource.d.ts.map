@@ -1,1 +1,1 @@
-{"version":3,"file":"installSource.d.ts","names":["readPackageDependencySpec","isNpmRegistrySpec","readPackageDependencySpec","pluginName","cwd","isNpmRegistrySpec","spec"],"sources":["../../../src/apps/installSource.ts"],"mappings":";AAuBA;AAaA;;A,cAbaA,yB;;;;;;A,cAaAC,iB"}
+{"version":3,"file":"installSource.d.ts","names":[],"sources":["../../../src/apps/installSource.ts"],"mappings":";;AAuBA;AAaA;;cAba;;;;;;cAaA"}

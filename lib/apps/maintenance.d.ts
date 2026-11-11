@@ -1,6 +1,6 @@
-import * as node_karin9 from "node-karin";
+import * as node_karin25 from "node-karin";
 
-// src/apps/maintenance.d.ts
+//#region src/apps/maintenance.d.ts
 
 /**
  * 定时清理临时目录。
@@ -10,7 +10,8 @@ import * as node_karin9 from "node-karin";
  *
  * `cleanupRuntimeTemp` 内部会读 `runtime.cleanupEnabled`，开关关闭时不做任何清理。
  */
-declare const tempCleanup: node_karin9.Task;
+declare const tempCleanup: node_karin25.Task;
 //# sourceMappingURL=maintenance.d.ts.map
+//#endregion
 export { tempCleanup };
 //# sourceMappingURL=maintenance.d.ts.map

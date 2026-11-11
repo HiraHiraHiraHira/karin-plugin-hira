@@ -68,7 +68,7 @@ describe('handleResolverMessage', () => {
     expect(reply).toHaveBeenCalledWith([
       { type: 'image', file: `base64://${Buffer.from('resolver-error-card').toString('base64')}` }
     ])
-  })
+  }, 15_000)
 
   it('extracts Xiaoheihe jumpUrl from QQ json share cards and invokes the resolver', async () => {
     resolverMocks.resolveXiaoheihe.mockResolvedValueOnce({

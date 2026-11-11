@@ -1,1 +1,1 @@
-{"version":3,"file":"light.d.ts","names":["light","node_karin5","MessageEventMap","Command","node_karin5","light","Command","MessageEventMap"],"sources":["../../../src/apps/light.ts"],"mappings":";;;A,cAUaA,K,EAAKC,WAAAA,CAAAE,O,OAyBhBF,WAAAA,CAzBgBC,e"}
+{"version":3,"file":"light.d.ts","names":[],"sources":["../../../src/apps/light.ts"],"mappings":";;;;cAsDa,kBAAyB,kCAA6B;cAmDtD,OAAK,YAAA,CAAA,cAEhB,YAAA,CAFgB"}
