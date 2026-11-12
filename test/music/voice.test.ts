@@ -35,13 +35,13 @@ const resetRuntimeMocks = () => {
 }
 
 describe('buildVoiceTempPaths', () => {
-  it('uses controlled temp paths for source, wav, silk, and opus fallback', () => {
+  it('uses controlled temp paths for source, wav, silk, and mp3 fallback', () => {
     const paths = buildVoiceTempPaths('D:/tmp/hira')
 
     expect(paths.source).toMatch(/music-voice[\\/].+\.audio$/)
     expect(paths.wav).toMatch(/music-voice[\\/].+\.wav$/)
     expect(paths.silk).toMatch(/music-voice[\\/].+\.silk$/)
-    expect(paths.output).toMatch(/music-voice[\\/].+\.ogg$/)
+    expect(paths.output).toMatch(/music-voice[\\/].+\.mp3$/)
   })
 })
 
@@ -85,10 +85,10 @@ describe('transcodePlayableToVoice', () => {
     expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.audio$/), { force: true })
   })
 
-  it('SILK 编码失败时回退 opus ogg', async () => {
+  it('SILK 编码失败时回退 mp3', async () => {
     runtimeMocks.encodeSilkFile.mockRejectedValueOnce(new Error('wasm unavailable'))
 
-    await expect(transcodePlayableToVoice(playableOf('https://example.test/a.mp3'))).resolves.toMatch(/\.ogg$/)
+    await expect(transcodePlayableToVoice(playableOf('https://example.test/a.mp3'))).resolves.toMatch(/\.mp3$/)
     expect(runtimeMocks.runFfmpeg).toHaveBeenLastCalledWith(expect.objectContaining({
       format: 'voice',
       highQuality: undefined
@@ -104,7 +104,7 @@ describe('transcodePlayableToVoice', () => {
 
     expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.wav$/), { force: true })
     expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.silk$/), { force: true })
-    expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.ogg$/), { force: true })
+    expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.mp3$/), { force: true })
     expect(rmSpy).toHaveBeenCalledWith(expect.stringMatching(/\.audio$/), { force: true })
   })
 })
@@ -141,12 +141,12 @@ describe('resolveVoiceFile', () => {
     expect(result).toBe(runtimeMocks.encodeSilkFile.mock.calls[0]?.[1])
   })
 
-  it('falls back to opus ogg when silk encoding is unavailable', async () => {
+  it('falls back to mp3 when silk encoding is unavailable', async () => {
     runtimeMocks.encodeSilkFile.mockRejectedValueOnce(new Error('wasm unavailable'))
 
     const result = await resolveVoiceFile(playableOf('https://example.test/a.mp3'))
 
-    expect(result).toMatch(/\.ogg$/)
+    expect(result).toMatch(/\.mp3$/)
     expect(runtimeMocks.runFfmpeg).toHaveBeenLastCalledWith(expect.objectContaining({ format: 'voice' }))
   })
 })

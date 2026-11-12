@@ -16,8 +16,11 @@ export const buildVoiceTempPaths = (root = getTempRoot()) => {
     source: path.join(dir, `${base()}.audio`),
     wav: path.join(dir, `${base()}.wav`),
     silk: path.join(dir, `${base()}.silk`),
-    /** silk 不可用时的 opus 兜底产物 */
-    output: path.join(dir, `${base()}.ogg`)
+    /**
+     * silk 不可用时的兜底产物，用 mp3 而不是 opus/ogg：
+     * Yogurt（Milky 协议端）的解码器只认 mp3，opus 会 no decoder found。
+     */
+    output: path.join(dir, `${base()}.mp3`)
   }
 }
 

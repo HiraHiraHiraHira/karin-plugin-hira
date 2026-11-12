@@ -1,1 +1,1 @@
-{"version":3,"file":"web.config.d.ts","names":[],"sources":["../../src/web.config.ts"],"mappings":";;;cAIa,WAmBX,YAAA,CAnBoB"}
+{"version":3,"file":"web.config.d.ts","names":["webConfig","node_karin16","DefinePageConfig","default","node_karin16","webConfig","DefinePageConfig","default"],"sources":["../../src/web.config.ts"],"mappings":";;;A,cAIaA,S,EAmBXC,YAAAA,CAnBoBC,gB"}

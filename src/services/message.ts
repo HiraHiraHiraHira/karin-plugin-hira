@@ -46,6 +46,18 @@ const toVideoMessageFile = (file: string) => {
   return `file://${file.replace(/\\/g, '/')}`
 }
 
+/**
+ * 出站本地音频要带 scheme：Milky 协议端（Yogurt）会拿裸路径去解 URI，
+ * 直接抛 `Unsupported URI scheme: /app/...mp3`。NapCat 也能吃 file://，
+ * 所以统一补前缀，不按协议分叉。
+ */
+const toRecordFile = (file: string) => {
+  if (!file) return file
+  if (/^(?:https?:|base64:|file:):?\/\//i.test(file)) return file
+  if (/^base64:/i.test(file)) return file
+  return `file://${file.replace(/\\/g, '/')}`
+}
+
 const formatFileSize = (bytes: number) => {
   const mb = bytes / 1024 / 1024
   return `${mb >= 10 ? Math.round(mb) : Number(mb.toFixed(1))}MB`
@@ -377,12 +389,12 @@ export const replyMusicPlayable = async (e: Message, playable: MusicPlayable) =>
 
 export const replyVoiceFileOrAudio = async (e: Message, playable: MusicPlayable, voiceFile?: string) => {
   try {
-    const result = await e.reply(segment.record(voiceFile || playable.audioUrl) as ReplyPayload)
+    const result = await e.reply(segment.record(toRecordFile(voiceFile || playable.audioUrl)) as ReplyPayload)
     return result?.messageId
   } catch {
     if (voiceFile && voiceFile !== playable.audioUrl) {
       try {
-        const result = await e.reply(segment.record(playable.audioUrl) as ReplyPayload)
+        const result = await e.reply(segment.record(toRecordFile(playable.audioUrl)) as ReplyPayload)
         return result?.messageId
       } catch {
         // 直链也失败, 继续降级到音乐卡 + 文本链接, 保证不空回.

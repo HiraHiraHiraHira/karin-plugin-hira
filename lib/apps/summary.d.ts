@@ -1,7 +1,7 @@
-import * as node_karin8 from "node-karin";
+import * as node_karin7 from "node-karin";
 import { Message } from "node-karin";
 
-//#region src/apps/summary.d.ts
+// src/apps/summary.d.ts
 /** 显式命令：#总结一下 <链接>（链接后允许跟多余文字，按第一条 http(s) 链接处理）。 */
 declare const summaryCommandReg: RegExp;
 /**
@@ -12,10 +12,9 @@ declare const summaryCommandReg: RegExp;
 declare const autoSummaryReg: RegExp;
 declare const summaryHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
 declare const summaryAutoHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
-declare const summary: node_karin8.Command<keyof node_karin8.MessageEventMap>;
-declare const summaryAuto: node_karin8.Command<keyof node_karin8.MessageEventMap>;
+declare const summary: node_karin7.Command<keyof node_karin7.MessageEventMap>;
+declare const summaryAuto: node_karin7.Command<keyof node_karin7.MessageEventMap>;
 //# sourceMappingURL=summary.d.ts.map
 
-//#endregion
 export { autoSummaryReg, summary, summaryAuto, summaryAutoHandler, summaryCommandReg, summaryHandler };
 //# sourceMappingURL=summary.d.ts.map

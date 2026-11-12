@@ -17,46 +17,47 @@ describe('buildFfmpegArgs', () => {
     ])
   })
 
-  it('builds voice-friendly opus args with sample rate and mono channel', () => {
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toContain('-ar')
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toContain('24000')
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toContain('-ac')
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toContain('1')
+  it('builds voice-friendly mp3 args with sample rate and mono channel', () => {
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice' })).toContain('-ar')
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice' })).toContain('24000')
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice' })).toContain('-ac')
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice' })).toContain('1')
   })
 
-  it('keeps the default low-quality voice args unchanged', () => {
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice' })).toEqual([
+  it('keeps the default low-quality voice args on mp3', () => {
+    // 兜底产物用 mp3：Yogurt 的解码器不认 opus/ogg
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice' })).toEqual([
       '-y',
       '-i',
       'in.mp3',
       '-vn',
       '-ac',
       '1',
-      '-ar',
-      '24000',
       '-codec:a',
-      'libopus',
+      'libmp3lame',
       '-b:a',
       '32k',
-      'out.ogg'
+      '-ar',
+      '24000',
+      'out.mp3'
     ])
   })
 
   it('builds high-quality voice args with stereo 48kHz 128kbps', () => {
-    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.ogg', format: 'voice', highQuality: true })).toEqual([
+    expect(buildFfmpegArgs({ input: 'in.mp3', output: 'out.mp3', format: 'voice', highQuality: true })).toEqual([
       '-y',
       '-i',
       'in.mp3',
       '-vn',
       '-ac',
       '2',
-      '-ar',
-      '48000',
       '-codec:a',
-      'libopus',
+      'libmp3lame',
       '-b:a',
       '128k',
-      'out.ogg'
+      '-ar',
+      '48000',
+      'out.mp3'
     ])
   })
 

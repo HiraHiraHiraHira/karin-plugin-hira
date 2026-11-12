@@ -1,6 +1,6 @@
 import * as node_karin1 from "node-karin";
 
-//#region src/apps/music.d.ts
+// src/apps/music.d.ts
 
 /**
  * 命令门禁. 与 commandParser 保持一致:
@@ -15,6 +15,5 @@ declare const musicCookie: node_karin1.Command<keyof node_karin1.MessageEventMap
 declare const music: node_karin1.Command<keyof node_karin1.MessageEventMap>;
 //# sourceMappingURL=music.d.ts.map
 
-//#endregion
 export { music, musicCookie, musicCookieReg, musicReg };
 //# sourceMappingURL=music.d.ts.map

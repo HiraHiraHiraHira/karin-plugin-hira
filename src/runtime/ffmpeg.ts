@@ -95,6 +95,9 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
   }
 
   if (options.format === 'voice') {
+    // 兜底产物必须是 mp3：Yogurt（Milky 协议端）的解码器只认 mp3，
+    // libopus 封出来的 ogg 会 no decoder found + audio processing failed。
+    // NapCat 侧同样吃 mp3 语音，所以不必按协议分叉。
     return [
       '-y',
       '-i',
@@ -102,12 +105,12 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
       '-vn',
       '-ac',
       options.highQuality ? '2' : '1',
-      '-ar',
-      options.highQuality ? '48000' : '24000',
       '-codec:a',
-      'libopus',
+      'libmp3lame',
       '-b:a',
       options.highQuality ? '128k' : '32k',
+      '-ar',
+      options.highQuality ? '48000' : '24000',
       options.output
     ]
   }
