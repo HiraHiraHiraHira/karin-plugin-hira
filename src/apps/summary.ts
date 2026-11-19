@@ -1,6 +1,6 @@
 import karin, { common, segment, type Elements, type Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { hostnameOf } from '@/resolvers/url'
 import { replyPlainText, replyText } from '@/services/message'
@@ -78,6 +78,7 @@ const runSummary = async (e: Message, url: string) => {
 
 export const summaryHandler = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
+  if (!isGroupModuleEnabled(e, 'summary')) return next?.()
 
   const message = e.msg.trim()
   if (!summaryCommandReg.test(message)) return next?.()
@@ -98,6 +99,7 @@ export const summaryHandler = async (e: Message, next?: () => unknown) => {
 export const summaryAutoHandler = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
   if (!Config.ai.summaryEnabled) return next?.()
+  if (!isGroupModuleEnabled(e, 'summary')) return next?.()
 
   const message = e.msg.trim()
   // 显式命令交给 summaryHandler，避免同一条消息总结两次

@@ -60,6 +60,9 @@ export const helpMenu = [
     title: '管理',
     items: [
       { title: '#Hira更新 / #hi更新', description: '检查插件更新，更新成功后自动重启 Karin。', icon: '更' },
+      { title: '#开关', description: '查看本群各功能开关状态（群管以上可用）。', icon: '开' },
+      { title: '#点歌关闭 / #解析关闭 / #B站关闭', description: '按模块关闭本群功能；私聊加群号可远程：#群123456 点歌关闭。', icon: '关' },
+      { title: '#全部关闭 / #全部开启', description: '一次改本群全部功能开关。', icon: '全' },
       { title: '#点歌卡片状态', description: '查看卡片通道顺序、熔断状态和最近发送记录。', icon: '卡' },
       { title: '#hi清理垃圾 / #Hira清理垃圾', description: '清理下载和渲染临时文件。', icon: '清' }
     ]

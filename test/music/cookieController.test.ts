@@ -27,7 +27,8 @@ vi.mock('node-karin', async importOriginal => {
 })
 
 vi.mock('@/apps/runtime', () => ({
-  isHiraAppEnabled: () => true
+  isHiraAppEnabled: () => true,
+  isGroupModuleEnabled: () => true
 }))
 
 vi.mock('@/config', () => ({

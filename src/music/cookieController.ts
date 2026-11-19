@@ -1,7 +1,7 @@
 import { logger } from 'node-karin'
 import type { Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config, updateMusicCookie } from '@/config'
 import { maskCookie, musicCookieHelp, parseMusicCookieCommand } from '@/music/cookieCommand'
 import { getMusicCookieStatusLines, validateMusicCookie } from '@/music/cookieStatus'
@@ -76,6 +76,8 @@ export const replyMusicCookieStatus = async (e: Message) => {
 
 export const handleMusicCookieMessage = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
+  // Cookie 管理属于点歌功能，本群关了点歌就一起关掉
+  if (!isGroupModuleEnabled(e, 'music')) return next?.()
 
   const command = parseMusicCookieCommand(e.msg)
   if (command.type === 'none') return next?.()

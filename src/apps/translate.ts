@@ -1,6 +1,6 @@
 import karin, { type Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { replyPlainText } from '@/services/message'
 import { parseTranslateCommand, parseTranslateTargetOnly, translateCommandReg } from '@/translate/commandParser'
@@ -63,6 +63,7 @@ export const translateReg = translateCommandReg
 export const translateHandler = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
   if (!Config.translate.enabled) return next?.()
+  if (!isGroupModuleEnabled(e, 'translate')) return next?.()
 
   let command = parseTranslateCommand(e.msg)
   // 无正文时取引用消息文字再翻（R 原版行为）

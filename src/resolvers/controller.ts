@@ -1,6 +1,6 @@
 import type { Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { replyResolvedPost } from '@/services/message'
 
@@ -43,6 +43,7 @@ const resolveMatched = async (url: string, message = ''): Promise<ResolverResult
 export const handleResolverMessage = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
   if (!Config.resolver.enabled) return next?.()
+  if (!isGroupModuleEnabled(e, 'resolve')) return next?.()
 
   const url = extractFirstUrl(e.msg)
   if (!url) return next?.()
@@ -51,6 +52,17 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
 
   const match = matchResolver(url)
   if (!match) return next?.()
+  // 平台级开关：关掉 B站 后，B站链接放行给别的插件，其它平台的解析不受影响
+  if (!isGroupModuleEnabled(e, `resolve:${match.platform}`)) {
+    logResolverStage({
+      platform: match.platform,
+      stage: 'match',
+      ok: false,
+      reason: 'platform switch off',
+      url
+    })
+    return next?.()
+  }
   if (!isPlatformEnabled(match.platform)) {
     logResolverStage({
       platform: match.platform,

@@ -1,6 +1,6 @@
 import karin, { common, segment, type Elements, type Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { lightCommandReg, parseLightCommand } from '@/light/commandParser'
 import {
@@ -57,6 +57,9 @@ export const lightHandler = async (e: Message, next?: () => unknown) => {
   if (!Config.light.enabled) return next?.()
   const command = parseLightCommand(e.msg)
   if (command.type === 'none') return next?.()
+  // 娱乐（猫图/买家秀/累了）和查询（医药/软件）分开关，群里往往只想关其中一个
+  const lightModule = command.type === 'medicine' || command.type === 'software' ? 'light:query' : 'light:fun'
+  if (!isGroupModuleEnabled(e, lightModule)) return next?.()
 
   try {
     // 猫图/累了：先取图再发文案，接口全挂时只回一条报错，不会先抖机灵再报错

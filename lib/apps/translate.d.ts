@@ -1,4 +1,4 @@
-import * as node_karin0 from "node-karin";
+import * as node_karin23 from "node-karin";
 import { Message } from "node-karin";
 
 // src/apps/translate.d.ts
@@ -11,7 +11,7 @@ declare const findReplyId: (elements: unknown) => string | undefined;
 declare const extractQuotedText: (e: Message) => Promise<string | undefined>;
 declare const translateReg: RegExp;
 declare const translateHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
-declare const translate: node_karin0.Command<keyof node_karin0.MessageEventMap>;
+declare const translate: node_karin23.Command<keyof node_karin23.MessageEventMap>;
 //# sourceMappingURL=translate.d.ts.map
 
 export { extractQuotedText, findReplyId, translate, translateHandler, translateReg };

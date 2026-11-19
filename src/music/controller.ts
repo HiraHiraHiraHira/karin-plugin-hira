@@ -2,7 +2,7 @@ import path from 'node:path'
 
 import karin, { common, segment, type CustomNodeElement, type Message } from 'node-karin'
 
-import { isHiraAppEnabled } from '@/apps/runtime'
+import { isGroupModuleEnabled, isHiraAppEnabled } from '@/apps/runtime'
 import { Config } from '@/config'
 import { parseMusicCommand } from '@/music/commandParser'
 import { BilibiliMusicProvider, createMusicProviders, extractBvFromText } from '@/music/providers'
@@ -269,6 +269,7 @@ const replyNoSongs = async (e: Message, personalized = false) => {
 export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
   if (!Config.music.enabled) return next?.()
+  if (!isGroupModuleEnabled(e, 'music')) return next?.()
 
   const command = parseMusicCommand(e.msg)
   if (command.type === 'none') return next?.()
