@@ -57,9 +57,17 @@ export const lightHandler = async (e: Message, next?: () => unknown) => {
   if (!Config.light.enabled) return next?.()
   const command = parseLightCommand(e.msg)
   if (command.type === 'none') return next?.()
-  // 娱乐（猫图/买家秀/累了）和查询（医药/软件）分开关，群里往往只想关其中一个
-  const lightModule = command.type === 'medicine' || command.type === 'software' ? 'light:query' : 'light:fun'
-  if (!isGroupModuleEnabled(e, lightModule)) return next?.()
+  // 娱乐（猫图/买家秀/累了）和查询（医药/软件）分开关，群里往往只想关其中一个；
+  // 娱乐内部再拆到单条命令，猫图有人用、累了没人看时可以只关后者
+  const commandModule: Record<string, string> = {
+    cat: 'light:cat',
+    buyerShow: 'light:buyer',
+    tired: 'light:tired',
+    medicine: 'light:query',
+    software: 'light:query'
+  }
+  const lightModule = commandModule[command.type]
+  if (lightModule && !isGroupModuleEnabled(e, lightModule)) return next?.()
 
   try {
     // 猫图/累了：先取图再发文案，接口全挂时只回一条报错，不会先抖机灵再报错

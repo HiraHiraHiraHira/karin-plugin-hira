@@ -34,8 +34,11 @@ export const switchModules: SwitchModule[] = [
   { id: 'resolve:tieba', label: '贴吧解析', aliases: ['贴吧', 'tieba'], parent: 'resolve' },
   { id: 'resolve:xiaoheihe', label: '小黑盒解析', aliases: ['小黑盒', 'xiaoheihe'], parent: 'resolve' },
   { id: 'resolve:general', label: '通用解析', aliases: ['通用解析', '通用', '其他平台'], parent: 'resolve' },
-  { id: 'light', label: '轻量功能', aliases: ['轻量', '轻量功能'], parent: 'light' },
-  { id: 'light:fun', label: '娱乐（猫图/买家秀/累了）', aliases: ['娱乐', '猫图', '买家秀', '累了'], parent: 'light' },
+  { id: 'light', label: '轻量功能', aliases: ['轻量', '轻量功能'] },
+  { id: 'light:fun', label: '娱乐（全部）', aliases: ['娱乐'], parent: 'light' },
+  { id: 'light:cat', label: '猫图', aliases: ['猫图', 'cat'], parent: 'light:fun' },
+  { id: 'light:buyer', label: '买家秀', aliases: ['买家秀'], parent: 'light:fun' },
+  { id: 'light:tired', label: '累了', aliases: ['累了'], parent: 'light:fun' },
   { id: 'light:query', label: '查询（医药/软件）', aliases: ['查询', '医药', '医药查询', '推荐软件'], parent: 'light' },
   { id: 'translate', label: '翻译', aliases: ['翻译', 'translate'], parent: 'translate' },
   { id: 'summary', label: 'AI 总结', aliases: ['总结', 'AI总结', 'ai总结', '网页总结'], parent: 'summary' }

@@ -2,8 +2,7 @@ import karin from 'node-karin'
 
 import { handleMusicMessage } from '@/music/controller'
 import { handleMusicCookieMessage } from '@/music/cookieController'
-import { notSwitchCommandSource, switchCommandReg } from '@/switches/commandParser'
-import { switchHandler } from './switches'
+import { notSwitchCommandSource } from '@/switches/commandParser'
 
 const sourceWords = '网易云?|QQ|qq|扣扣|酷我|酷狗|哔哩哔哩|哔哩|B站|bilibili'
 const actionWords = '点歌|点播音乐|点播|播放|放一首|放首|来一首|来首'
@@ -37,14 +36,6 @@ export const musicCookieReg = new RegExp(`^${cookieCommand}[\\s\\S]*$`, 'i')
 
 export const musicCookie = karin.command(musicCookieReg, handleMusicCookieMessage, {
   name: 'Hira-音乐Cookie'
-})
-
-/**
- * 开关命令注册在点歌之前：Karin 1.18 的命令按加载顺序匹配，
- * 点歌正则里的负向断言保证 `#点歌关闭` 落到这里而不是被当成搜索「关闭」。
- */
-export const switchesCommand = karin.command(switchCommandReg, switchHandler, {
-  name: 'Hira-功能开关'
 })
 
 export const music = karin.command(musicReg, handleMusicMessage, {

@@ -105,4 +105,55 @@ describe('群级功能开关存储', () => {
     expect(bilibili?.enabled).toBe(false)
     expect(bilibili?.mutedBy).toBe('解析（全部平台）')
   })
+
+  it('娱乐下三条命令各自独立，关累了不影响猫图', async () => {
+    reset()
+    const store = await import('@/switches/store')
+
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light:tired', enabled: false }])
+    expect(store.isModuleEnabled('1000', '555', 'light:tired')).toBe(false)
+    // 同组的猫图、买家秀照常
+    expect(store.isModuleEnabled('1000', '555', 'light:cat')).toBe(true)
+    expect(store.isModuleEnabled('1000', '555', 'light:buyer')).toBe(true)
+    expect(store.isModuleEnabled('1000', '555', 'light:fun')).toBe(true)
+    expect(store.isModuleEnabled('1000', '555', 'light:query')).toBe(true)
+  })
+
+  it('关娱乐整组会连带停掉猫图/买家秀/累了', async () => {
+    reset()
+    const store = await import('@/switches/store')
+
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light:fun', enabled: false }])
+    for (const id of ['light:fun', 'light:cat', 'light:buyer', 'light:tired']) {
+      expect(store.isModuleEnabled('1000', '555', id)).toBe(false)
+    }
+    // 查询不受影响
+    expect(store.isModuleEnabled('1000', '555', 'light:query')).toBe(true)
+  })
+
+  it('关轻量整块会连带停掉娱乐和查询', async () => {
+    reset()
+    const store = await import('@/switches/store')
+
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light', enabled: false }])
+    for (const id of ['light', 'light:fun', 'light:tired', 'light:query']) {
+      expect(store.isModuleEnabled('1000', '555', id)).toBe(false)
+    }
+  })
+
+  it('整组关着时单开下位不生效，必须先开上位', async () => {
+    reset()
+    const store = await import('@/switches/store')
+
+    // 上一版本只有 light:fun 这一层，老文件里的值不能失效
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light:fun', enabled: false }])
+    expect(store.isModuleEnabled('1000', '555', 'light:cat')).toBe(false)
+
+    // 上位还关着，单开猫图不生效——提示用户先 #娱乐开启
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light:cat', enabled: true }])
+    expect(store.isModuleEnabled('1000', '555', 'light:cat')).toBe(false)
+
+    store.applySwitchChanges('1000', '555', [{ moduleId: 'light:fun', enabled: true }])
+    expect(store.isModuleEnabled('1000', '555', 'light:cat')).toBe(true)
+  })
 })

@@ -1,9 +1,9 @@
-import type { Message } from 'node-karin'
+import karin, { type Message } from 'node-karin'
 
 import { isHiraAppEnabled } from '@/apps/runtime'
 import { replyPlainText, replyText } from '@/services/message'
 
-import { parseSwitchCommand } from '@/switches/commandParser'
+import { parseSwitchCommand, switchCommandReg } from '@/switches/commandParser'
 import { moduleById } from '@/switches/modules'
 import {
   applySwitchChanges,
@@ -125,6 +125,18 @@ export const switchHandler = async (e: Message, next?: () => unknown) => {
     [{ moduleId: command.moduleId, enabled: command.enabled }],
     e.userId
   )
+
+  // 开下位但上位还关着：状态是对的，可功能依旧不生效，必须说清楚，
+  // 否则回一句「已开启猫图」而群里还是没反应
+  if (command.enabled) {
+    const item = snapshotGroupSwitches(selfId, groupId)
+      .find(entry => entry.id === command.moduleId)
+    if (item?.mutedBy) {
+      await replyPlainText(e, `${scope}已开启${label}，但「${item.mutedBy}」还关着，得先把它开回来。`)
+      return true
+    }
+  }
+
   const text = changed.length
     ? `${scope}${toggleText(label, command.enabled)}`
     : `${scope}本来就${command.enabled ? '开启' : '关闭'}了，没改`
@@ -132,3 +144,11 @@ export const switchHandler = async (e: Message, next?: () => unknown) => {
   return true
 }
 
+/**
+ * 开关命令单独注册在自己这个文件里，别塞进 music.ts：
+ * `groups.json` 的 disable 是按产物文件名匹配的（`karin-plugin-hira:music.js`），
+ * 点歌被某个群禁掉时会把同文件的开关命令一起带走，群里就再也改不了开关。
+ */
+export const switchesCommand = karin.command(switchCommandReg, switchHandler, {
+  name: 'Hira-功能开关'
+})

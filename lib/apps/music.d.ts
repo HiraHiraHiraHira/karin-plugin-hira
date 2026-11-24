@@ -1,4 +1,4 @@
-import * as node_karin12 from "node-karin";
+import * as node_karin4 from "node-karin";
 
 // src/apps/music.d.ts
 
@@ -12,14 +12,9 @@ import * as node_karin12 from "node-karin";
  */
 declare const musicReg: RegExp;
 declare const musicCookieReg: RegExp;
-declare const musicCookie: node_karin12.Command<keyof node_karin12.MessageEventMap>;
-/**
- * 开关命令注册在点歌之前：Karin 1.18 的命令按加载顺序匹配，
- * 点歌正则里的负向断言保证 `#点歌关闭` 落到这里而不是被当成搜索「关闭」。
- */
-declare const switchesCommand: node_karin12.Command<keyof node_karin12.MessageEventMap>;
-declare const music: node_karin12.Command<keyof node_karin12.MessageEventMap>;
+declare const musicCookie: node_karin4.Command<keyof node_karin4.MessageEventMap>;
+declare const music: node_karin4.Command<keyof node_karin4.MessageEventMap>;
 //# sourceMappingURL=music.d.ts.map
 
-export { music, musicCookie, musicCookieReg, musicReg, switchesCommand };
+export { music, musicCookie, musicCookieReg, musicReg };
 //# sourceMappingURL=music.d.ts.map
