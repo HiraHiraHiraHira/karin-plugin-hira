@@ -87,6 +87,13 @@ const sourceName = (source: MusicSource): string => ({
   bilibili: '哔哩哔哩'
 })[source]
 
+const displayListKeyword = (keyword: string) => ({
+  dailyRecommend: '每日推荐',
+  radio: '个性电台',
+  favorites: '我的收藏',
+  random: '随机推荐'
+})[keyword] ?? keyword
+
 const getProvider = (source: MusicSource) => {
   const provider = providers().get(source)
   if (!provider) throw new Error(`未启用音乐源：${sourceName(source)}`)
@@ -307,7 +314,12 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
       store.set(key, items, { keyword: command.keyword, source, page })
 
       if (command.listMode || Config.music.listModeDefault) {
-        const listMessageId = await replyMusicList(e, items, page, { startIndex: 1 })
+        const listMessageId = await replyMusicList(e, items, page, {
+          startIndex: 1,
+          keyword: command.keyword,
+          source,
+          ttlSeconds: Config.music.sessionTtlSeconds
+        })
         if (listMessageId) store.addListMessage(key, { contact: e.contact, selfId: e.selfId, messageId: listMessageId })
         return true
       }
@@ -370,7 +382,12 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
       // 追加而非覆盖:序号跨页连续,下一页续期 TTL
       const appended = store.appendPage(key, items, page)
       const startIndex = appended?.startIndex ?? session.startIndex + session.items.length
-      const listMessageId = await replyMusicList(e, items, page, { startIndex })
+      const listMessageId = await replyMusicList(e, items, page, {
+        startIndex,
+        keyword: displayListKeyword(session.meta.keyword),
+        source: session.meta.source,
+        ttlSeconds: Config.music.sessionTtlSeconds
+      })
       if (listMessageId) store.addListMessage(key, { contact: e.contact, selfId: e.selfId, messageId: listMessageId })
       return true
     }
@@ -472,7 +489,12 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
       const page = command.type === 'favorites' ? command.page ?? 1 : 1
       store.set(key, items, { keyword: command.type, source: 'qq', page })
 
-      const listMessageId = await replyMusicList(e, items, page, { startIndex: 1 })
+      const listMessageId = await replyMusicList(e, items, page, {
+        startIndex: 1,
+        keyword: displayListKeyword(command.type),
+        source: 'qq',
+        ttlSeconds: Config.music.sessionTtlSeconds
+      })
       if (listMessageId) store.addListMessage(key, { contact: e.contact, selfId: e.selfId, messageId: listMessageId })
       return true
     }

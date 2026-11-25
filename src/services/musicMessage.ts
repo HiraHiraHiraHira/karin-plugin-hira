@@ -1,8 +1,9 @@
 import type { Message } from 'node-karin'
 import { segment } from 'node-karin'
 
+import { Config } from '@/config'
 import { formatArtists } from '@/music/providers/helpers'
-import type { MusicItem, MusicPlayable } from '@/music/types'
+import type { MusicItem, MusicPlayable, MusicSource } from '@/music/types'
 import { buildMusicListCardHtml, logCardRenderFailure, renderCardImage } from '@/services/cardRender'
 import { sendWithMediaRetry } from '@/services/mediaRetry'
 import { sendMusicCard } from '@/services/musicCard'
@@ -69,11 +70,27 @@ export const replyVoiceFileOrAudio = async (e: Message, playable: MusicPlayable,
   }
 }
 
+const musicSourceLabel = (source?: MusicSource) => {
+  switch (source) {
+    case 'netease': return '网易云'
+    case 'qq': return 'QQ音乐'
+    case 'kuwo': return '酷我'
+    case 'kugou': return '酷狗'
+    case 'bilibili': return '哔哩哔哩'
+    default: return undefined
+  }
+}
+
 export const createReplyMusicList = (replyText: ReplyTextFn) => async (
   e: Message,
   items: MusicItem[],
   page: number,
-  options?: { startIndex?: number }
+  options?: {
+    startIndex?: number
+    keyword?: string
+    source?: MusicSource
+    ttlSeconds?: number
+  }
 ) => {
   if (items.length === 0) {
     await replyText(e, '没有搜到相关歌曲')
@@ -87,7 +104,10 @@ export const createReplyMusicList = (replyText: ReplyTextFn) => async (
       index: startIndex + offset,
       title: item.title,
       artists: formatArtists(item.artists),
-      duration
+      duration,
+      coverUrl: item.coverUrl,
+      album: item.album,
+      source: musicSourceLabel(item.source)
     }
   })
 
@@ -100,7 +120,12 @@ export const createReplyMusicList = (replyText: ReplyTextFn) => async (
   try {
     const images = await renderCardImage({
       name: 'music-list',
-      html: buildMusicListCardHtml(rows, page, startIndex),
+      html: buildMusicListCardHtml(rows, page, startIndex, {
+        keyword: options?.keyword,
+        source: musicSourceLabel(options?.source ?? items[0]?.source),
+        coverUrl: items.find(item => item.coverUrl)?.coverUrl,
+        ttlSeconds: options?.ttlSeconds ?? Config.music.sessionTtlSeconds
+      }),
       width: 920
     })
     const result = await sendWithMediaRetry(payload => e.reply(payload as ReplyPayload), images)

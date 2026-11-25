@@ -8,13 +8,14 @@ import {
   type ErrorCardOptions,
   type HelpCardGroup,
   type HelpCardItem,
-  type MusicListCardItem,
   type StatusCardItem,
   type StatusCardOptions,
   type TemplateHtmlOptions,
   type UpdateCardOptions,
   type UpdateCardState
 } from './types'
+
+export { buildMusicListCardHtml } from './musicListCard'
 
 const h = createElement
 
@@ -101,28 +102,6 @@ export const buildHelpCardHtml = (groups: HelpCardGroup[]) => renderTemplateHtml
         </div>`).join('')}
       </section>`).join('')}
     </div>`
-})
-
-export const buildMusicListCardHtml = (items: MusicListCardItem[], page: number, startIndex = 1) => renderTemplateHtml({
-  eyebrow: 'SEARCH RESULTS',
-  hero: 'MUSIC',
-  title: '点歌列表',
-  subtitle: `第 ${page} 页，发送序号点歌，发送 #下一页 查看更多`,
-  watermark: 'PICK',
-  footer: 'Send a number to choose a track',
-  body: `
-      <div class="music-list">
-        ${items.map((item, position) => `
-        <article class="music-row">
-          <div class="music-index">${item.index ?? startIndex + position}</div>
-          <div class="song-main">
-            <h2 class="song-title">${escapeHtml(compactText(item.title, 56))}</h2>
-            <p class="song-artists">${escapeHtml(compactText(item.artists, 70))}</p>
-          </div>
-          ${item.duration ? `<div class="duration">${escapeHtml(item.duration)}</div>` : ''}
-        </article>`).join('')}
-      </div>
-      <p class="card-tip">发送序号点歌，列表超时后失效，也可以发送 #下一页 翻页</p>`
 })
 
 const statusText = (status: StatusCardItem['status']) => ({

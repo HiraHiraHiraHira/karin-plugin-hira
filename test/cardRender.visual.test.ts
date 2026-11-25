@@ -59,9 +59,14 @@ describe('Card Render Visual Test', () => {
       { title: '简单爱', artists: '周杰伦', duration: '04:30' }
     ]
 
-    const html = buildMusicListCardHtml(items, 1)
+    const html = buildMusicListCardHtml(items, 1, 1, {
+      keyword: '周杰伦',
+      source: '网易云',
+      ttlSeconds: 120
+    })
     fs.writeFileSync(path.join(outputDir, 'music-list-card.html'), html)
-    expect(html).toContain('MUSIC')
+    expect(html).toContain('HIRA MUSIC')
+    expect(html).toContain('列表 2 分钟后失效')
   })
 
   test('生成状态卡片 HTML', () => {

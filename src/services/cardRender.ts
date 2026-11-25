@@ -14,6 +14,7 @@ export type {
   HelpCardGroup,
   HelpCardItem,
   MusicListCardItem,
+  MusicListCardOptions,
   ResolverPreviewCardOptions,
   StatusCardItem,
   StatusCardOptions,

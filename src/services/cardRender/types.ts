@@ -18,6 +18,16 @@ export type MusicListCardItem = {
   title: string
   artists: string
   duration?: string
+  coverUrl?: string
+  album?: string
+  source?: string
+}
+
+export type MusicListCardOptions = {
+  keyword?: string
+  source?: string
+  coverUrl?: string
+  ttlSeconds?: number
 }
 
 export type StatusCardItem = {

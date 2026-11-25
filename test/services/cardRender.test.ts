@@ -125,29 +125,40 @@ describe('cardRender', () => {
     expect(html).not.toContain('Hira：')
   })
 
-  it('builds a music pick card with numbered rows', () => {
+  it('builds a vinyl-shelf music pick card with numbered rows, dynamic cover, and ttl note', () => {
     const html = buildMusicListCardHtml([
       {
         title: '晴天',
         artists: '周杰伦',
-        duration: '4:29'
+        duration: '04:29',
+        coverUrl: 'https://img.example.com/qingtian.jpg'
       },
       {
         title: '稻香',
         artists: '周杰伦',
-        duration: '3:43'
+        duration: '03:43'
       }
-    ], 1)
+    ], 1, 1, {
+      keyword: '晴天',
+      source: '网易云',
+      ttlSeconds: 180
+    })
 
-    expect(html).toContain('hira-render-shell')
-    expect(html).toContain('SEARCH RESULTS')
-    expect(html).toContain('点歌列表')
+    expect(html).toContain('data-card="music-list-vinyl"')
+    expect(html).toContain('<head style="display:none!important">')
+    expect(html).toContain('<style style="display:none!important">')
+    expect(html).toContain('HIRA MUSIC')
+    expect(html).toContain('PAGE 01')
+    expect(html).toContain('网易云')
     expect(html).toContain('music-row')
     expect(html).toContain('music-index')
-    expect(html).toContain('第 1 页')
+    expect(html).toContain('01')
     expect(html).toContain('晴天')
     expect(html).toContain('周杰伦')
-    expect(html).toContain('发送序号点歌')
+    expect(html).toContain('发序号点歌')
+    expect(html).toContain('列表 3 分钟后失效')
+    expect(html).toContain('https://img.example.com/qingtian.jpg')
+    expect(html).toContain('vinyl-disc')
   })
 
   it('builds status cards for derivative status-like replies', () => {
