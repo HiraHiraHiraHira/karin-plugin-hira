@@ -6,6 +6,7 @@ import { karinPathBase } from 'node-karin/root'
 import YAML from 'yaml'
 
 import { Root } from '@/root'
+import { atomicWriteFileSync } from '@/runtime/atomicWrite'
 import type { HiraConfig } from '@/types/config'
 import type { MusicSource } from '@/music/types'
 
@@ -117,39 +118,10 @@ const readConfig = <T extends ConfigName>(name: T): HiraConfig[T] => {
   }
 }
 
-const atomicWrite = (file: string, content: string) => {
-  const temporaryFile = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
-  try {
-    const descriptor = fs.openSync(temporaryFile, 'w')
-    try {
-      fs.writeFileSync(descriptor, content, 'utf8')
-      fs.fsyncSync(descriptor)
-    } finally {
-      fs.closeSync(descriptor)
-    }
-
-    try {
-      fs.renameSync(temporaryFile, file)
-    } catch (error) {
-      // Windows refuses to replace an existing file with renameSync. Remove only
-      // the intended config file, then complete the same-directory replacement.
-      if (error && typeof error === 'object' && 'code' in error && (error.code === 'EEXIST' || error.code === 'EPERM')) {
-        fs.rmSync(file, { force: true })
-        fs.renameSync(temporaryFile, file)
-      } else {
-        throw error
-      }
-    }
-  } finally {
-    fs.rmSync(temporaryFile, { force: true })
-  }
-}
-
 const writeConfig = <T extends ConfigName>(name: T, value: HiraConfig[T]) => {
-  fs.mkdirSync(configRootDir, { recursive: true })
   const file = path.join(configRootDir, `${name}.yaml`)
   const normalized = clone(value)
-  atomicWrite(file, YAML.stringify(normalized))
+  atomicWriteFileSync(file, YAML.stringify(normalized))
 }
 
 export const readAllConfig = (): HiraConfig => ({

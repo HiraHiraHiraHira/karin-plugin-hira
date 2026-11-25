@@ -168,6 +168,27 @@ describe('fetchResponse retry', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('does not auto-retry non-idempotent POST requests by default', async () => {
+    const fetchMock = vi.fn(async () => new Response('upstream error', { status: 502 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchJson('https://example.test/ai', { method: 'POST', retryDelayMs: 0 })).rejects.toThrow('HTTP 502')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts chunked responses as soon as streamed bytes exceed maxBytes', async () => {
+    let pulled = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1
+        controller.enqueue(new Uint8Array([1, 2, 3, 4]))
+      }
+    })
+    await expect(readResponseBytes(new Response(stream), 6)).rejects.toThrow('响应超过 6 字节限制')
+    expect(pulled).toBeLessThanOrEqual(2)
+  })
 })
 
 describe('fetchResponse insecure branch', () => {

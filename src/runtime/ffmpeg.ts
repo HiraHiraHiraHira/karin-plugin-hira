@@ -129,9 +129,11 @@ export const buildFfmpegArgs = (options: FfmpegBuildOptions) => {
 }
 
 export const runFfmpeg = async (options: FfmpegBuildOptions) => {
-  await execFileAsync(Config.runtime.ffmpegPath || 'ffmpeg', buildFfmpegArgs(options), {
+  const args = ['-nostdin', '-loglevel', 'error', ...buildFfmpegArgs(options)]
+  await execFileAsync(Config.runtime.ffmpegPath || 'ffmpeg', args, {
     windowsHide: true,
-    timeout: Math.max(10, Config.runtime.downloadTimeoutSeconds) * 1000
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: Math.max(120, Config.runtime.downloadTimeoutSeconds * 2) * 1000
   })
   return options.output
 }

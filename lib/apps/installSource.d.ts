@@ -1,3 +1,4 @@
+//#region src/apps/installSource.d.ts
 /**
  * 读取宿主 package.json 中该插件的依赖声明。
  * 仅当 package.json 确实声明了该依赖时才返回字符串，未声明返回 undefined。
@@ -10,5 +11,6 @@ declare const readPackageDependencySpec: (pluginName: string, cwd?: string) => s
  */
 declare const isNpmRegistrySpec: (spec: string | undefined) => boolean;
 //# sourceMappingURL=installSource.d.ts.map
+//#endregion
 export { isNpmRegistrySpec, readPackageDependencySpec };
 //# sourceMappingURL=installSource.d.ts.map

@@ -15,6 +15,8 @@ export type FetchJsonOptions = {
   insecure?: boolean
   /** 网络错误/5xx 重试的首次退避毫秒数, 默认 200; 便于测试设为 0 */
   retryDelayMs?: number
+  /** 是否允许重试；默认仅对幂等方法（GET/HEAD/OPTIONS）开启，POST 等非幂等请求需显式设为 true */
+  retry?: boolean
 }
 
 const defaultRequestHeaders = {
@@ -208,15 +210,23 @@ const isRetryableNetworkError = (error: unknown) => {
   return name === 'TypeError' || name === 'AbortError' || name === 'FetchError'
 }
 
+const isIdempotentMethod = (method?: string) => {
+  const normalized = (method || 'GET').toUpperCase()
+  return normalized === 'GET' || normalized === 'HEAD' || normalized === 'OPTIONS'
+}
+
 /**
  * 网络错误和 5xx 做 3 次指数退避重试; 4xx/业务体超限等确定性失败立即抛出.
+ * 非幂等方法（如 POST）默认不自动重试，避免 AI/翻译接口重复扣费或放大延迟。
  */
 export const fetchResponse = async (url: string, options: FetchJsonOptions = {}): Promise<Response> => {
+  const allowRetry = options.retry ?? isIdempotentMethod(options.method)
+  const maxAttempts = allowRetry ? httpRetryAttempts : 1
   const delay = Math.max(0, options.retryDelayMs ?? 200)
   for (let attempt = 0; ; attempt++) {
     try {
       const response = await fetchResponseOnce(url, options)
-      if (!retryableStatus(response.status) || attempt >= httpRetryAttempts - 1) return response
+      if (!retryableStatus(response.status) || attempt >= maxAttempts - 1) return response
       try {
         await response.body?.cancel()
       } catch {
@@ -224,31 +234,81 @@ export const fetchResponse = async (url: string, options: FetchJsonOptions = {})
       }
     } catch (error) {
       // 调用方主动取消时不重试; 内部超时(AbortError)按网络错误处理.
-      if (options.signal?.aborted || !isRetryableNetworkError(error) || attempt >= httpRetryAttempts - 1) throw error
+      if (options.signal?.aborted || !isRetryableNetworkError(error) || attempt >= maxAttempts - 1) throw error
     }
     await sleepWithBackoff(delay, attempt)
   }
 }
 
-export const readResponseBytes = async (response: Response, maxBytes?: number) => {
+export const readResponseBytes = async (response: Response, maxBytes?: number, signal?: AbortSignal) => {
   const contentLength = Number(response.headers.get('content-length'))
   if (maxBytes !== undefined && Number.isFinite(contentLength) && contentLength > maxBytes) {
     await response.body?.cancel()
     throw new Error(`响应超过 ${maxBytes} 字节限制`)
   }
-  const bytes = Buffer.from(await response.arrayBuffer())
-  if (maxBytes !== undefined && bytes.byteLength > maxBytes) throw new Error(`响应超过 ${maxBytes} 字节限制`)
-  return bytes
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const bytes = Buffer.from(await response.arrayBuffer())
+    if (maxBytes !== undefined && bytes.byteLength > maxBytes) throw new Error(`响应超过 ${maxBytes} 字节限制`)
+    return bytes
+  }
+
+  // 流式读取并实时计数，防止无 Content-Length 的 chunked 大响应先把内存打满，同时支持读体阶段超时中止
+  const reader = response.body.getReader()
+  const onAbort = () => {
+    void reader.cancel().catch(() => undefined)
+  }
+  if (signal) {
+    if (signal.aborted) {
+      onAbort()
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  }
+
+  const chunks: Buffer[] = []
+  let total = 0
+  try {
+    while (true) {
+      if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      total += value.byteLength
+      if (maxBytes !== undefined && total > maxBytes) {
+        await reader.cancel().catch(() => undefined)
+        throw new Error(`响应超过 ${maxBytes} 字节限制`)
+      }
+      chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
+    }
+    return Buffer.concat(chunks, total)
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    reader.releaseLock()
+  }
 }
 
 const assertOk = (response: Response) => {
   if (!response.ok) throw new Error(`接口返回 HTTP ${response.status}`)
 }
 
+const fetchResponseAndBytes = async (url: string, options: FetchJsonOptions = {}) => {
+  const timeoutMs = options.timeoutMs ?? 15_000
+  const { signal, didTimeout, cleanup } = createAbortSignal(timeoutMs, options.signal)
+  try {
+    const response = await fetchResponse(url, { ...options, signal })
+    assertOk(response)
+    const bytes = await readResponseBytes(response, options.maxBytes, signal)
+    return { response, bytes }
+  } catch (error) {
+    if (didTimeout()) throw new Error(`请求超时（${timeoutMs} ms）`)
+    throw error
+  } finally {
+    cleanup()
+  }
+}
+
 export const fetchJson = async <T = unknown>(url: string, options: FetchJsonOptions = {}): Promise<T> => {
-  const response = await fetchResponse(url, options)
-  assertOk(response)
-  const bytes = await readResponseBytes(response, options.maxBytes)
+  const { response, bytes } = await fetchResponseAndBytes(url, options)
   const text = bytes.toString('utf8')
   try {
     return JSON.parse(text) as T
@@ -260,9 +320,7 @@ export const fetchJson = async <T = unknown>(url: string, options: FetchJsonOpti
 }
 
 export const fetchText = async (url: string, options: FetchJsonOptions = {}): Promise<string> => {
-  const response = await fetchResponse(url, options)
-  assertOk(response)
-  const bytes = await readResponseBytes(response, options.maxBytes)
+  const { bytes } = await fetchResponseAndBytes(url, options)
   return bytes.toString('utf8')
 }
 

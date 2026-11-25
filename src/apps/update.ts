@@ -477,7 +477,7 @@ export const checkAndNotifyUpdate = async () => {
 }
 
 export const handleHiraUpdateReply = async (e: Message, next?: HookNext) => {
-  if (!isHiraAppEnabled()) {
+  if (!isHiraAppEnabled() || !e.isMaster) {
     await next?.()
     return
   }
@@ -500,7 +500,7 @@ export const hiraUpdateCommand = karin.command(updateReg, async (e, next) => {
   name: 'Hira-更新'
 })
 
-export const update = karin.task('hira-更新检测', '*/3 * * * *', checkAndNotifyUpdate, {
+export const update = karin.task('hira-更新检测', '0 */6 * * *', checkAndNotifyUpdate, {
   name: 'hira-更新检测',
   log: false
 })

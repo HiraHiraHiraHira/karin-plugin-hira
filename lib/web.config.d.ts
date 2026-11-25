@@ -1,6 +1,7 @@
-import * as node_karin14 from "node-karin";
+import * as node_karin25 from "node-karin";
 
-// src/web.config.d.ts
-declare const webConfig: node_karin14.DefinePageConfig;
+//#region src/web.config.d.ts
+declare const webConfig: node_karin25.DefinePageConfig;
+//#endregion
 export { webConfig as default, webConfig };
 //# sourceMappingURL=web.config.d.ts.map

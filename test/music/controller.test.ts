@@ -23,6 +23,20 @@ vi.mock('@/apps/runtime', () => ({
   isGroupModuleEnabled: () => true
 }))
 
+vi.mock('@/summary/urlSafety', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/summary/urlSafety')>()
+  return {
+    ...actual,
+    validatePublicUrl: vi.fn(async (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') {
+        throw new Error('网页地址指向受限地址')
+      }
+      return url
+    })
+  }
+})
+
 vi.mock('@/config', () => ({
   Config: {
     music: {

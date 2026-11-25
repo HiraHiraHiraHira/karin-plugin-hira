@@ -72,8 +72,9 @@ export const transcodePlayableToVoice = async (playable: MusicPlayable, options:
     for (const file of [paths.wav, paths.silk, paths.output]) fs.rmSync(file, { force: true })
     throw error
   } finally {
-    // 无论成功失败都清掉中间源文件，避免每次语音点歌残留两个文件
+    // 无论成功失败都清掉中间源文件与中间 WAV，避免每次语音点歌残留中间文件
     fs.rmSync(paths.source, { force: true })
+    fs.rmSync(paths.wav, { force: true })
   }
 }
 

@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 
 import karin, { common, segment, type CustomNodeElement, type Message } from 'node-karin'
@@ -16,6 +17,7 @@ import { downloadFile } from '@/runtime/downloader'
 import { ensureTempDir, getTempRoot } from '@/runtime/temp'
 import { replyMusicList, replyMusicPlayable, replyPlainText, replyText, replyVoiceFileOrAudio } from '@/services/message'
 import { resolveResolverRedirectUrl } from '@/services/resolverHttp'
+import { validatePublicUrl } from '@/summary/urlSafety'
 
 /** 撤回一条列表消息,失败静默(过期/无权限/已被撤都属正常). */
 const recallListMessage = async (target: MusicSessionListTarget) => {
@@ -247,19 +249,29 @@ const musicFileExtension = (url: string) => {
   }
 }
 
-/** 引用卡片下载音乐: 落盘后用 uploadFile 发群文件, 场景不支持时回下载链接. */
+/** 引用卡片下载音乐: 先校验公网地址并限制体积，落盘后用 uploadFile 发群文件并清理临时文件。 */
 const downloadPlayableAudio = async (e: Message, playable: MusicPlayable) => {
-  const dir = ensureTempDir(getTempRoot(), 'music-download')
+  await validatePublicUrl(playable.audioUrl)
   const filename = `${playable.item.title}-${formatArtists(playable.item.artists)}.${musicFileExtension(playable.audioUrl)}`
     .replace(/[\\/:*?"<>|]/g, '_')
-  const output = path.join(dir, `${Date.now()}-${filename}`)
-  await downloadFile({ url: playable.audioUrl, output })
 
-  if (['group', 'friend'].includes(e.contact.scene) && typeof e.bot.uploadFile === 'function') {
-    await e.bot.uploadFile(e.contact, output, filename)
+  if (!(['group', 'friend'].includes(e.contact.scene) && typeof e.bot.uploadFile === 'function')) {
+    await replyPlainText(e, `${filename}\n${playable.audioUrl}`)
     return
   }
-  await replyPlainText(e, `${filename}\n${playable.audioUrl}`)
+
+  const dir = ensureTempDir(getTempRoot(), 'music-download')
+  const output = path.join(dir, `${Date.now()}-${filename}`)
+  try {
+    await downloadFile({
+      url: playable.audioUrl,
+      output,
+      maxBytes: Config.runtime.maxAudioFileSizeBytes
+    })
+    await e.bot.uploadFile(e.contact, output, filename)
+  } finally {
+    fs.rmSync(output, { force: true })
+  }
 }
 
 const replyNoSongs = async (e: Message, personalized = false) => {
@@ -388,6 +400,7 @@ export const handleMusicMessage = async (e: Message, next?: () => unknown) => {
 
       const card = await readQuotedMusicCard(e)
       if (card) {
+        await validatePublicUrl(card.musicUrl)
         const playable = playableOfCard(card)
         if (command.type === 'download') {
           await downloadPlayableAudio(e, playable)

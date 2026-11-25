@@ -1,6 +1,6 @@
 import { Message } from "node-karin";
 
-// src/apps/runtime.d.ts
+//#region src/apps/runtime.d.ts
 declare const createConfiguredCommandRegExp: (command: string, aliases: string[]) => RegExp;
 declare const isHiraAppEnabled: () => boolean;
 /**
@@ -9,5 +9,6 @@ declare const isHiraAppEnabled: () => boolean;
  */
 declare const isGroupModuleEnabled: (e: Message, moduleId: string) => boolean;
 //# sourceMappingURL=runtime.d.ts.map
+//#endregion
 export { createConfiguredCommandRegExp, isGroupModuleEnabled, isHiraAppEnabled };
 //# sourceMappingURL=runtime.d.ts.map

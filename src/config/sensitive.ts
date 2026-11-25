@@ -8,6 +8,7 @@ const sensitivePaths = [
   'music.cookies.kuwo',
   'music.cookies.kugou',
   'music.cookies.bilibili',
+  'music.card.ark.key',
   'music.bilibili.appKey',
   'music.bilibili.appSecret',
   'resolver.proxy',

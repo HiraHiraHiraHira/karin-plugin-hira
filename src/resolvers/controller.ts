@@ -12,21 +12,76 @@ import { resolveKuaishou } from './kuaishou'
 import { matchResolver } from './matcher'
 import { logResolverStage } from './resolverLog'
 import { resolveTieba } from './tieba'
-import type { ResolverResult } from './types'
+import type { ResolvedPost, ResolverResult } from './types'
 import { extractFirstUrl, extractShareCardMeta } from './url'
 import { resolveWeibo } from './weibo'
 import { resolveXiaoheihe } from './xiaoheihe'
 import { resolveXiaohongshu } from './xiaohongshu'
 
-const isPlatformEnabled = (platform: keyof typeof Config.resolver.platforms) => (
-  Config.resolver.platforms[platform] !== false
-)
+const RESOLVER_CACHE_TTL_MS = 3 * 60_000
+const RESOLVER_CACHE_MAX = 200
+const RESOLVER_COOLDOWN_MS = 15_000
+const RESOLVER_COOLDOWN_MAX = 500
 
-const resolveMatched = async (url: string, message = ''): Promise<ResolverResult> => {
-  const match = matchResolver(url)
-  if (!match) return { platform: 'general', displayName: '通用解析', ok: false, reason: '暂不支持该链接' }
+type CachedResolveEntry = {
+  result: ResolvedPost
+  expiresAt: number
+}
 
-  const config = Config.resolver
+const resolveResultCache = new Map<string, CachedResolveEntry>()
+const inFlightResolves = new Map<string, Promise<ResolverResult>>()
+const recentPeerUrls = new Map<string, number>()
+
+export const resetResolverGuard = () => {
+  resolveResultCache.clear()
+  inFlightResolves.clear()
+  recentPeerUrls.clear()
+}
+
+const getCachedResult = (cacheKey: string, now: number): ResolvedPost | undefined => {
+  const entry = resolveResultCache.get(cacheKey)
+  if (!entry) return undefined
+  if (entry.expiresAt <= now) {
+    resolveResultCache.delete(cacheKey)
+    return undefined
+  }
+  // LRU: 刷新顺序
+  resolveResultCache.delete(cacheKey)
+  resolveResultCache.set(cacheKey, entry)
+  return entry.result
+}
+
+const setCachedResult = (cacheKey: string, result: ResolvedPost, now: number) => {
+  resolveResultCache.delete(cacheKey)
+  resolveResultCache.set(cacheKey, { result, expiresAt: now + RESOLVER_CACHE_TTL_MS })
+  if (resolveResultCache.size > RESOLVER_CACHE_MAX) {
+    const oldestKey = resolveResultCache.keys().next().value
+    if (oldestKey !== undefined) resolveResultCache.delete(oldestKey)
+  }
+}
+
+const checkAndMarkCooldown = (peerKey: string, now: number) => {
+  const last = recentPeerUrls.get(peerKey)
+  if (last !== undefined && now - last < RESOLVER_COOLDOWN_MS) return true
+  recentPeerUrls.delete(peerKey)
+  recentPeerUrls.set(peerKey, now)
+  if (recentPeerUrls.size > RESOLVER_COOLDOWN_MAX) {
+    for (const [k, ts] of recentPeerUrls) {
+      if (now - ts >= RESOLVER_COOLDOWN_MS || recentPeerUrls.size > RESOLVER_COOLDOWN_MAX) {
+        recentPeerUrls.delete(k)
+      }
+      if (recentPeerUrls.size <= RESOLVER_COOLDOWN_MAX) break
+    }
+  }
+  return false
+}
+
+const resolveMatched = async (
+  match: NonNullable<ReturnType<typeof matchResolver>>,
+  url: string,
+  config: typeof Config.resolver,
+  message = ''
+): Promise<ResolverResult> => {
   const shareMeta = extractShareCardMeta(message)
 
   if (match.platform === 'bilibili') return resolveBilibili(url, config.cookies.bilibili)
@@ -42,13 +97,14 @@ const resolveMatched = async (url: string, message = ''): Promise<ResolverResult
 
 export const handleResolverMessage = async (e: Message, next?: () => unknown) => {
   if (!isHiraAppEnabled()) return next?.()
-  if (!Config.resolver.enabled) return next?.()
+  const config = Config.resolver
+  if (!config.enabled) return next?.()
   if (!isGroupModuleEnabled(e, 'resolve')) return next?.()
 
   const url = extractFirstUrl(e.msg)
   if (!url) return next?.()
 
-  if (shouldSkipForKkkCompat(url, Config.resolver.kkkCompat)) return next?.()
+  if (shouldSkipForKkkCompat(url, config.kkkCompat)) return next?.()
 
   const match = matchResolver(url)
   if (!match) return next?.()
@@ -63,7 +119,7 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
     })
     return next?.()
   }
-  if (!isPlatformEnabled(match.platform)) {
+  if (config.platforms[match.platform] === false) {
     logResolverStage({
       platform: match.platform,
       stage: 'match',
@@ -73,14 +129,48 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
     })
     return next?.()
   }
+
+  const now = Date.now()
+  const peer = (e as Message & { contact?: { peer?: string } }).contact?.peer
+  if (peer && checkAndMarkCooldown(`${e.selfId || ''}:${peer}:${url}`, now)) {
+    logResolverStage({
+      platform: match.platform,
+      stage: 'match',
+      ok: false,
+      reason: 'cooldown',
+      url
+    })
+    return true
+  }
+
   logResolverStage({ platform: match.platform, stage: 'match', ok: true, url })
 
-  const result = await resolveMatched(url, e.msg).catch((error: unknown): ResolverResult => ({
-    platform: match.platform,
-    displayName: match.displayName,
-    ok: false,
-    reason: error instanceof Error ? error.message : String(error)
-  }))
+  const cacheKey = `${match.platform}:${url}`
+  const cached = getCachedResult(cacheKey, now)
+  let result: ResolverResult
+  if (cached) {
+    result = cached
+  } else {
+    let pending = inFlightResolves.get(cacheKey)
+    if (!pending) {
+      pending = resolveMatched(match, url, config, e.msg)
+        .catch((error: unknown): ResolverResult => ({
+          platform: match.platform,
+          displayName: match.displayName,
+          ok: false,
+          reason: error instanceof Error ? error.message : String(error)
+        }))
+        .finally(() => {
+          inFlightResolves.delete(cacheKey)
+        })
+      inFlightResolves.set(cacheKey, pending)
+    }
+    result = await pending
+    if (!('ok' in result)) {
+      setCachedResult(cacheKey, result, Date.now())
+    }
+  }
+
   logResolverStage({
     platform: match.platform,
     stage: 'normalize',
@@ -88,7 +178,18 @@ export const handleResolverMessage = async (e: Message, next?: () => unknown) =>
     reason: 'ok' in result ? result.reason : undefined,
     url
   })
-  await replyResolvedPost(e, result)
-  logResolverStage({ platform: match.platform, stage: 'send', ok: true, url })
+  try {
+    await replyResolvedPost(e, result)
+    logResolverStage({ platform: match.platform, stage: 'send', ok: true, url })
+  } catch (error) {
+    logResolverStage({
+      platform: match.platform,
+      stage: 'send',
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      url
+    })
+    throw error
+  }
   return true
 }

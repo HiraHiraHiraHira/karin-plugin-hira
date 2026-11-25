@@ -1,7 +1,7 @@
-import * as node_karin19 from "node-karin";
+import * as node_karin13 from "node-karin";
 import { Message } from "node-karin";
 
-// src/apps/translate.d.ts
+//#region src/apps/translate.d.ts
 /** 从消息元素里取引用段的 messageId：引用段只带 id，正文要再用 getMsg 取一次。 */
 declare const findReplyId: (elements: unknown) => string | undefined;
 /**
@@ -11,8 +11,9 @@ declare const findReplyId: (elements: unknown) => string | undefined;
 declare const extractQuotedText: (e: Message) => Promise<string | undefined>;
 declare const translateReg: RegExp;
 declare const translateHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
-declare const translate: node_karin19.Command<keyof node_karin19.MessageEventMap>;
+declare const translate: node_karin13.Command<keyof node_karin13.MessageEventMap>;
 //# sourceMappingURL=translate.d.ts.map
 
+//#endregion
 export { extractQuotedText, findReplyId, translate, translateHandler, translateReg };
 //# sourceMappingURL=translate.d.ts.map

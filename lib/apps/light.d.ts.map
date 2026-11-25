@@ -1,1 +1,1 @@
-{"version":3,"file":"light.d.ts","names":["Message","lightHandler","Promise","light","node_karin0","MessageEventMap","Command","node_karin0","Message","lightHandler","e","next","Promise","light","Command","MessageEventMap"],"sources":["../../../src/apps/light.ts"],"mappings":";;;;A,cAsDaC,Y,MAAyBD,O,2BAA6BE,O;A,cA8DtDC,K,EAAKC,WAAAA,CAAAE,O,OAEhBF,WAAAA,CAFgBC,e"}
+{"version":3,"file":"light.d.ts","names":[],"sources":["../../../src/apps/light.ts"],"mappings":";;;;cAsDa,kBAAyB,kCAA6B;cA8DtD,OAAK,YAAA,CAAA,cAEhB,YAAA,CAFgB"}

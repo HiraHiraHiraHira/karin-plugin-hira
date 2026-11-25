@@ -42,6 +42,8 @@ describe('handleResolverMessage', () => {
     resolverMocks.resolveXiaoheihe.mockReset()
     karinMocks.render.mockReset()
     karinMocks.render.mockResolvedValue(Buffer.from('resolver-error-card').toString('base64'))
+    const { resetResolverGuard } = await import('@/resolvers/controller')
+    resetResolverGuard()
     const { Config } = await import('@/config')
     Config.resolver.kkkCompat = true
     Config.resolver.platforms.bilibili = true

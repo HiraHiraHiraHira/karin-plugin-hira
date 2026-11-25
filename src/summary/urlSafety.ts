@@ -55,11 +55,24 @@ const isBlockedIpv6 = (address: string) => {
   const first = parts[0]
   if ((first & 0xfe00) === 0xfc00) return true // unique-local fc00::/7
   if ((first & 0xffc0) === 0xfe80) return true // link-local fe80::/10
+  if ((first & 0xffc0) === 0xfec0) return true // deprecated site-local fec0::/10
+  if ((first & 0xff00) === 0xff00) return true // multicast ff00::/8
   if (parts[0] === 0x2001 && parts[1] === 0x0db8) return true // documentation range
 
-  const mapped = parts.slice(0, 5).every(part => part === 0) && parts[5] === 0xffff
-  if (mapped) {
+  // IPv4-mapped (::ffff:a.b.c.d) 和 IPv4-compatible (::a.b.c.d)
+  const zero5 = parts.slice(0, 5).every(part => part === 0)
+  if (zero5 && (parts[5] === 0xffff || parts[5] === 0)) {
     const ipv4 = `${parts[6] >> 8}.${parts[6] & 0xff}.${parts[7] >> 8}.${parts[7] & 0xff}`
+    return isBlockedIpv4(ipv4)
+  }
+  // NAT64 well-known prefix (64:ff9b::/96)
+  if (parts[0] === 0x0064 && parts[1] === 0xff9b && parts.slice(2, 6).every(part => part === 0)) {
+    const ipv4 = `${parts[6] >> 8}.${parts[6] & 0xff}.${parts[7] >> 8}.${parts[7] & 0xff}`
+    return isBlockedIpv4(ipv4)
+  }
+  // 6to4 (2002::/16) 内嵌 IPv4
+  if (parts[0] === 0x2002) {
+    const ipv4 = `${parts[1] >> 8}.${parts[1] & 0xff}.${parts[2] >> 8}.${parts[2] & 0xff}`
     return isBlockedIpv4(ipv4)
   }
   return false
@@ -146,7 +159,7 @@ export const fetchPublicPageText = async (input: string) => {
       if (!response.ok) throw new Error(`网页请求失败：HTTP ${response.status}`)
       if (!isAllowedPageContent(response)) throw new Error('目标地址不是可总结的文本网页')
 
-      const bytes = await readResponseBytes(response, maxPageBytes)
+      const bytes = await readResponseBytes(response, maxPageBytes, controller.signal)
       return bytes.toString('utf8')
     } finally {
       clearTimeout(timeout)

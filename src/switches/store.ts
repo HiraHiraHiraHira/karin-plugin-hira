@@ -4,6 +4,7 @@ import path from 'node:path'
 import { karinPathBase } from 'node-karin/root'
 
 import { Root } from '@/root'
+import { atomicWriteFileSync } from '@/runtime/atomicWrite'
 
 import { leafModuleIds, moduleById, switchModules } from './modules'
 
@@ -46,23 +47,9 @@ const readFile = (): SwitchFile => {
   }
 }
 
-/** 原子写：先写临时文件再 rename，避免进程被杀时留下半个 JSON */
+/** 原子写：先写临时文件再 rename，兼容 Windows 覆盖冲突，避免进程被杀时留下半个 JSON */
 const writeFile = (data: SwitchFile) => {
-  fs.mkdirSync(dataDir(), { recursive: true })
-  const target = file()
-  const temporary = `${target}.${process.pid}.${Date.now()}.tmp`
-  try {
-    const descriptor = fs.openSync(temporary, 'w')
-    try {
-      fs.writeFileSync(descriptor, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
-      fs.fsyncSync(descriptor)
-    } finally {
-      fs.closeSync(descriptor)
-    }
-    fs.renameSync(temporary, target)
-  } finally {
-    fs.rmSync(temporary, { force: true })
-  }
+  atomicWriteFileSync(file(), `${JSON.stringify(data, null, 2)}\n`)
   cache = undefined
 }
 
@@ -117,7 +104,8 @@ export const applySwitchChanges = (
   changes: SwitchChange[],
   operator?: string
 ) => {
-  const data = readFile()
+  // 深拷贝后再修改，避免写盘失败时污染内存缓存造成内存与磁盘不一致
+  const data = structuredClone(readFile())
   const key = groupSwitchKey(selfId, groupId)
   const current = new Set(data[key]?.disabled ?? [])
   const before = new Set(current)
@@ -157,7 +145,7 @@ export const setAllModules = (
   enabled: boolean,
   operator?: string
 ) => {
-  const data = readFile()
+  const data = structuredClone(readFile())
   const key = groupSwitchKey(selfId, groupId)
   if (enabled) {
     if (!data[key]) return false

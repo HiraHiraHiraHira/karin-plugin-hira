@@ -92,9 +92,10 @@ const createMessage = () => {
     reply,
     selfId: 'bot-1',
     msg: '#Hira更新',
+    isMaster: true,
     contact: { scene: 'friend', peer: 'owner-1' },
     replyId: ''
-  } as unknown as Message & { reply: typeof reply, msg: string, replyId: string }
+  } as unknown as Message & { reply: typeof reply, msg: string, replyId: string, isMaster: boolean }
 }
 
 const readFirstRenderedHtml = () => {

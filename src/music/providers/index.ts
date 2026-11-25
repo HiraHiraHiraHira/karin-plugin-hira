@@ -7,8 +7,22 @@ import { KuwoProvider } from './kuwo'
 import { NeteaseProvider } from './netease'
 import { QQProvider } from './qq'
 
+let cachedFingerprint = ''
+let cachedProviders: Map<MusicSource, MusicProvider> | undefined
+
 export const createMusicProviders = () => {
   const music = Config.music
+  const fingerprint = JSON.stringify({
+    neteaseBaseUrl: music.api?.neteaseBaseUrl,
+    qqTempApi: music.api?.qqTempApi,
+    highQuality: music.highQuality,
+    cookies: music.cookies,
+    bilibili: music.bilibili
+  })
+  if (cachedProviders && cachedFingerprint === fingerprint) {
+    return cachedProviders
+  }
+
   const providers = new Map<MusicSource, MusicProvider>()
 
   providers.set('netease', new NeteaseProvider({
@@ -25,6 +39,8 @@ export const createMusicProviders = () => {
     appSecret: music.bilibili.appSecret
   }))
 
+  cachedFingerprint = fingerprint
+  cachedProviders = providers
   return providers
 }
 

@@ -6,7 +6,7 @@ export default defineConfig({
   clean: true,
   format: ['esm'],
   hash: false,
-  target: 'node18',
+  target: 'node20',
   outDir: 'lib',
   external: ['node-karin'],
   // tsdown 0.12.9 still emits these Rolldown transform options at the input root.
