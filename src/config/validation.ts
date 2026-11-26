@@ -9,6 +9,7 @@ type ValidationRule = {
 }
 
 const numberRules: ValidationRule[] = [
+  { path: 'app.updateNotify.intervalHours', label: 'app.updateNotify.intervalHours', min: 1, max: 168 },
   { path: 'music.pageSize', label: 'music.pageSize', min: 1, max: 20 },
   { path: 'music.sessionTtlSeconds', label: 'music.sessionTtlSeconds', min: 30, max: 3600 },
   { path: 'music.card.ark.timeoutMs', label: 'music.card.ark.timeoutMs', min: 1000, max: 30000 },

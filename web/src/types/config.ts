@@ -6,6 +6,12 @@ export type ConfigType = {
     helpCommand: string
     replyPrefix: string
     statusCommand: string
+    updateNotify: {
+      enabled: boolean
+      notifyMasters: boolean
+      groupIds: string
+      intervalHours: number
+    }
   }
   music: {
     enabled: boolean

@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { Message } from 'node-karin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { defaultConfig } from '@/config/defaults'
 import { Root } from '@/root'
 import { clearCardRenderCache } from '@/services/cardRender'
 
@@ -28,6 +29,8 @@ const karinMocks = vi.hoisted(() => {
     master: vi.fn(),
     getAllBotList: vi.fn(),
     sendMaster: vi.fn(),
+    sendMsg: vi.fn(),
+    contactGroup: vi.fn((peer: string) => ({ scene: 'group', peer })),
     render: vi.fn(async () => Buffer.from('update-card').toString('base64')),
     command,
     task,
@@ -42,7 +45,9 @@ vi.mock('node-karin', async importOriginal => {
     command: karinMocks.command,
     task: karinMocks.task,
     getAllBotList: karinMocks.getAllBotList,
-    sendMaster: karinMocks.sendMaster
+    sendMaster: karinMocks.sendMaster,
+    sendMsg: karinMocks.sendMsg,
+    contactGroup: karinMocks.contactGroup
   }
 
   return {
@@ -131,6 +136,11 @@ describe('update command', () => {
     karinMocks.getLocalCommitHash.mockResolvedValue('local123')
     karinMocks.getRemoteCommitHash.mockResolvedValue('remote456')
     karinMocks.exec.mockResolvedValue({ status: true, error: null, stdout: '', stderr: '' })
+    defaultConfig.app.enabled = true
+    defaultConfig.app.updateNotify.enabled = true
+    defaultConfig.app.updateNotify.notifyMasters = true
+    defaultConfig.app.updateNotify.groupIds = ''
+    defaultConfig.app.updateNotify.intervalHours = 6
     useInstallSource(npmSpec)
   })
 
@@ -398,5 +408,82 @@ describe('update command', () => {
 
     expect(karinMocks.checkPkgUpdate).not.toHaveBeenCalled()
     expect(karinMocks.sendMaster).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates git update notifications by remote commit hash and notifies again on new commits', async () => {
+    useInstallSource({ dependencies: { 'karin-plugin-hira': 'github:Hira/karin-plugin-hira' } })
+    const getFriendList = vi.fn(async () => [{ userId: 'owner-1' }])
+    karinMocks.checkGitPluginUpdate.mockResolvedValue({ status: 'yes', data: 'remote456 fix update', count: 1 })
+    karinMocks.getLocalCommitHash.mockResolvedValue('local123')
+    karinMocks.getRemoteCommitHash.mockResolvedValue('remote456')
+    karinMocks.getAllBotList.mockReturnValue([
+      { bot: { account: { selfId: 'bot-1', name: 'bot' }, getFriendList } }
+    ])
+    karinMocks.sendMaster.mockResolvedValue({ messageId: 'notice-git-1' })
+    const { checkAndNotifyUpdate } = await importUpdate()
+
+    // Already locked at remote456 -> should NOT re-notify
+    karinMocks.dbGet.mockResolvedValueOnce('remote456')
+    await checkAndNotifyUpdate()
+    expect(karinMocks.sendMaster).not.toHaveBeenCalled()
+
+    // Upstream advances to remote789 -> SHOULD notify and lock new hash
+    karinMocks.getRemoteCommitHash.mockResolvedValue('remote789')
+    karinMocks.dbGet.mockResolvedValueOnce('remote456')
+    await checkAndNotifyUpdate()
+    expect(karinMocks.sendMaster).toHaveBeenCalledTimes(1)
+    expect(karinMocks.dbSet).toHaveBeenCalledWith('hira:update:lock', 'remote789')
+  })
+
+  it('does not lock the notified version when no bot delivers a message', async () => {
+    karinMocks.checkPkgUpdate.mockResolvedValue({ status: 'yes', local: '0.1.0', remote: '0.2.0' })
+    karinMocks.getAllBotList.mockReturnValue([])
+    const { checkAndNotifyUpdate } = await importUpdate()
+
+    await checkAndNotifyUpdate()
+
+    expect(karinMocks.sendMaster).not.toHaveBeenCalled()
+    expect(karinMocks.dbSet).not.toHaveBeenCalledWith('hira:update:lock', expect.anything())
+  })
+
+  it('pushes update cards to configured groupIds and respects updateNotify.enabled', async () => {
+    const getGroupList = vi.fn(async () => [{ groupId: '10001' }])
+    karinMocks.checkPkgUpdate.mockResolvedValue({ status: 'yes', local: '0.1.0', remote: '0.2.0' })
+    karinMocks.getAllBotList.mockReturnValue([
+      { bot: { account: { selfId: 'bot-1', name: 'bot' }, getFriendList: vi.fn(async () => []), getGroupList } }
+    ])
+    karinMocks.sendMsg.mockResolvedValue({ messageId: 'group-msg-1' })
+    const { checkAndNotifyUpdate } = await importUpdate()
+    const { defaultConfig: activeDefaults } = await import('@/config/defaults')
+    activeDefaults.app.updateNotify.notifyMasters = false
+    activeDefaults.app.updateNotify.groupIds = '10001, 20002'
+
+    await checkAndNotifyUpdate()
+
+    expect(karinMocks.sendMaster).not.toHaveBeenCalled()
+    expect(karinMocks.sendMsg).toHaveBeenCalledWith('bot-1', { scene: 'group', peer: '10001' }, expect.any(Array))
+    expect(karinMocks.dbSet).toHaveBeenCalledWith('hira:update:lock', '0.2.0')
+
+    vi.clearAllMocks()
+    activeDefaults.app.updateNotify.enabled = false
+    await checkAndNotifyUpdate()
+    expect(karinMocks.checkPkgUpdate).not.toHaveBeenCalled()
+    expect(karinMocks.sendMsg).not.toHaveBeenCalled()
+  })
+
+  it('resolves file dependency installs as git update source', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hira-update-file-'))
+    const appDir = path.join(tmp, 'karin-app')
+    const sourceDir = path.join(tmp, 'karin-plugin-hira')
+    const storeDir = path.join(appDir, 'node_modules', 'karin-plugin-hira')
+    fs.mkdirSync(path.join(sourceDir, '.git'), { recursive: true })
+    fs.mkdirSync(storeDir, { recursive: true })
+    fs.mkdirSync(appDir, { recursive: true })
+    fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({
+      dependencies: { 'karin-plugin-hira': 'file:../karin-plugin-hira' }
+    }))
+    const { resolveUpdateCheckSource } = await importUpdate()
+
+    expect(resolveUpdateCheckSource(storeDir, appDir)).toBe('git')
   })
 })

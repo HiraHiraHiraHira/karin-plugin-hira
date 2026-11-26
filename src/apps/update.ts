@@ -31,6 +31,7 @@ import {
 
 export const UPDATE_LOCK_KEY = 'hira:update:lock'
 export const UPDATE_MSGID_KEY = 'hira:update:msgId'
+export const UPDATE_LAST_CHECK_KEY = 'hira:update:lastCheckAt'
 
 export const updateReg = createConfiguredCommandRegExp('#Hira更新', ['hira\\s*更新', 'hi\\s*更新'])
 
@@ -203,7 +204,7 @@ const checkGitUpdate = async (): Promise<GitUpdateResult> => {
 
 export const resolveUpdateCheckSource = (pluginPath = Root.pluginPath, cwd = process.cwd()) => {
   if (isNpmRegistrySpec(readPackageDependencySpec(Root.pluginName, cwd))) return 'npm' as const
-  return hasGitDir(pluginPath) ? 'git' as const : 'none' as const
+  return resolveGitUpdateTarget(pluginPath, cwd) ? 'git' as const : 'none' as const
 }
 
 const checkAvailableUpdate = async (): Promise<HiraUpdateResult> => {
@@ -350,17 +351,26 @@ export const handleHiraUpdate = async (e: Message) => {
   }
 }
 
-const shouldNotifyForLockedVersion = async (remoteVersion: string) => {
+const isGitUpdate = (update: HiraUpdateResult): update is Extract<GitUpdateResult, { status: 'yes' | 'no' }> => (
+  'source' in update && update.source === 'git'
+)
+
+const shouldNotifyForLockedVersion = async (update: Extract<HiraUpdateResult, { status: 'yes' }>) => {
   try {
     const lockedVersion = await db.get(UPDATE_LOCK_KEY)
     if (typeof lockedVersion !== 'string' || lockedVersion.length === 0) return true
+
+    // Git 模式以远程短 commit hash 去重：同一 commit 已推过则不再重复刷屏，出现新 commit 再推。
+    if (isGitUpdate(update)) {
+      return lockedVersion !== update.remote
+    }
 
     if (!isSemverGreater(lockedVersion, Root.pluginVersion)) {
       await db.del(UPDATE_LOCK_KEY)
       return true
     }
 
-    return isSemverGreater(remoteVersion, lockedVersion)
+    return isSemverGreater(update.remote, lockedVersion)
   } catch {
     return true
   }
@@ -369,6 +379,33 @@ const shouldNotifyForLockedVersion = async (remoteVersion: string) => {
 const lockNotifiedVersion = async (remoteVersion: string) => {
   try {
     await db.set(UPDATE_LOCK_KEY, remoteVersion)
+  } catch { }
+}
+
+const parseNotifyGroupIds = (raw: string | undefined) => (
+  Array.from(new Set(
+    String(raw || '')
+      .split(/[\s,，;；]+/)
+      .map(id => id.trim())
+      .filter(Boolean)
+  ))
+)
+
+const isScheduledCheckDue = async (intervalHours: number) => {
+  const intervalMs = Math.max(1, intervalHours) * 3600_000
+  try {
+    const raw = await db.get(UPDATE_LAST_CHECK_KEY)
+    const last = typeof raw === 'number' ? raw : Number(raw)
+    if (Number.isFinite(last) && last > 0 && Date.now() - last < intervalMs) {
+      return false
+    }
+  } catch { }
+  return true
+}
+
+const recordLastCheckAt = async () => {
+  try {
+    await db.set(UPDATE_LAST_CHECK_KEY, String(Date.now()))
   } catch { }
 }
 
@@ -422,31 +459,54 @@ const updateReminderCardMessage = async (update: Extract<HiraUpdateResult, { sta
   }
 }
 
-export const checkAndNotifyUpdate = async () => {
-  // 无法确定更新来源（非 npm 声明安装且非 Git 目录）时不轮询、不报错，避免每 3 分钟刷日志。
+export const checkAndNotifyUpdate = async (options?: { scheduled?: boolean }) => {
+  if (!isHiraAppEnabled()) return true
+  const notifyConfig = Config.app.updateNotify
+  if (notifyConfig?.enabled === false) return true
+
+  // 无法确定更新来源（非 npm 声明安装且非 Git 目录）时不轮询、不报错，避免刷日志。
   if (resolveUpdateCheckSource() === 'none') return true
+
+  if (options?.scheduled) {
+    const due = await isScheduledCheckDue(notifyConfig?.intervalHours ?? 6)
+    if (!due) return true
+    await recordLastCheckAt()
+  }
 
   const update = await checkAvailableUpdate().catch(() => undefined)
   if (!update || update.status !== 'yes') return true
-  if (!('source' in update) && !isSemverGreater(update.remote, update.local)) return true
-  if (!await shouldNotifyForLockedVersion(update.remote)) return true
+  if (!isGitUpdate(update) && !isSemverGreater(update.remote, update.local)) return true
+  if (!await shouldNotifyForLockedVersion(update)) return true
 
-  await lockNotifiedVersion(update.remote)
-
-  const masters = karinConfig.master().filter(id => id !== 'console')
-  if (masters.length === 0) return true
+  const notifyMasters = notifyConfig?.notifyMasters !== false
+  const masters = notifyMasters ? karinConfig.master().filter(id => id !== 'console') : []
+  const groupIds = parseNotifyGroupIds(notifyConfig?.groupIds)
+  if (masters.length === 0 && groupIds.length === 0) return true
 
   const botItems = karin.getAllBotList()
     .filter(item => item.bot.account.name !== 'console')
   if (botItems.length === 0) return true
 
   const friendsMap = new Map<string, Array<{ userId: string }>>()
+  const groupsMap = new Map<string, Array<{ groupId: string }>>()
+
   await Promise.all(botItems.map(async (item) => {
-    try {
-      const friends = await item.bot.getFriendList()
-      friendsMap.set(item.bot.account.selfId, Array.isArray(friends) ? friends : [])
-    } catch {
-      friendsMap.set(item.bot.account.selfId, [])
+    const selfId = item.bot.account.selfId
+    if (masters.length > 0) {
+      try {
+        const friends = await item.bot.getFriendList()
+        friendsMap.set(selfId, Array.isArray(friends) ? friends : [])
+      } catch {
+        friendsMap.set(selfId, [])
+      }
+    }
+    if (groupIds.length > 0 && typeof item.bot.getGroupList === 'function') {
+      try {
+        const groups = await item.bot.getGroupList()
+        groupsMap.set(selfId, Array.isArray(groups) ? groups : [])
+      } catch {
+        groupsMap.set(selfId, [])
+      }
     }
   }))
 
@@ -456,15 +516,42 @@ export const checkAndNotifyUpdate = async () => {
     if (matched) masterToBot.set(master, matched.bot)
   }
 
+  const groupToBot = new Map<string, typeof botItems[number]['bot']>()
+  for (const groupId of groupIds) {
+    const matched = botItems.find(item => (groupsMap.get(item.bot.account.selfId) || []).some(group => String(group.groupId) === groupId))
+    if (matched) groupToBot.set(groupId, matched.bot)
+  }
+
+  if (masterToBot.size === 0 && groupToBot.size === 0) return true
+
   const message = await updateReminderCardMessage(update)
   let storedMsgId: string | undefined
+  let sentCount = 0
 
   for (const master of masters) {
     const bot = masterToBot.get(master)
     if (!bot) continue
 
-    const result = await karin.sendMaster(bot.account.selfId, master, message)
-    if (!storedMsgId && result?.messageId) storedMsgId = result.messageId
+    try {
+      const result = await karin.sendMaster(bot.account.selfId, master, message)
+      sentCount += 1
+      if (!storedMsgId && result?.messageId) storedMsgId = result.messageId
+    } catch { }
+  }
+
+  for (const groupId of groupIds) {
+    const bot = groupToBot.get(groupId)
+    if (!bot) continue
+
+    try {
+      await karin.sendMsg(bot.account.selfId, karin.contactGroup(groupId), message)
+      sentCount += 1
+    } catch { }
+  }
+
+  // 至少成功送达一条后才落锁，避免 Bot 刚启动尚未连上时被静默吞掉通知。
+  if (sentCount > 0) {
+    await lockNotifiedVersion(update.remote)
   }
 
   if (storedMsgId) {
@@ -500,7 +587,7 @@ export const hiraUpdateCommand = karin.command(updateReg, async (e, next) => {
   name: 'Hira-更新'
 })
 
-export const update = karin.task('hira-更新检测', '0 */6 * * *', checkAndNotifyUpdate, {
+export const update = karin.task('hira-更新检测', '0 * * * *', () => checkAndNotifyUpdate({ scheduled: true }), {
   name: 'hira-更新检测',
   log: false
 })

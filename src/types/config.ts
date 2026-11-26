@@ -1,10 +1,18 @@
 import type { MusicSource } from '@/music/types'
 
+export type UpdateNotifyConfig = {
+  enabled: boolean
+  notifyMasters: boolean
+  groupIds: string
+  intervalHours: number
+}
+
 export type AppConfig = {
   enabled: boolean
   helpCommand: string
   replyPrefix: string
   statusCommand: string
+  updateNotify: UpdateNotifyConfig
 }
 
 export type MusicCardChannel = 'platform' | 'oidb' | 'ark' | 'music'

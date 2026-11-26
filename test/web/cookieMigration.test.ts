@@ -11,7 +11,13 @@ const baseConfig = (): ConfigType => ({
     enabled: true,
     helpCommand: '#Hira帮助',
     replyPrefix: 'Hira',
-    statusCommand: '#Hira状态'
+    statusCommand: '#Hira状态',
+    updateNotify: {
+      enabled: true,
+      notifyMasters: true,
+      groupIds: '',
+      intervalHours: 6
+    }
   },
   music: {
     enabled: true,
