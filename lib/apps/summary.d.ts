@@ -1,4 +1,4 @@
-import * as node_karin22 from "node-karin";
+import * as node_karin13 from "node-karin";
 import { Message } from "node-karin";
 
 //#region src/apps/summary.d.ts
@@ -12,8 +12,8 @@ declare const summaryCommandReg: RegExp;
 declare const autoSummaryReg: RegExp;
 declare const summaryHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
 declare const summaryAutoHandler: (e: Message, next?: () => unknown) => Promise<unknown>;
-declare const summary: node_karin22.Command<keyof node_karin22.MessageEventMap>;
-declare const summaryAuto: node_karin22.Command<keyof node_karin22.MessageEventMap>;
+declare const summary: node_karin13.Command<keyof node_karin13.MessageEventMap>;
+declare const summaryAuto: node_karin13.Command<keyof node_karin13.MessageEventMap>;
 //# sourceMappingURL=summary.d.ts.map
 
 //#endregion

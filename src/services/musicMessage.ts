@@ -99,7 +99,9 @@ export const createReplyMusicList = (replyText: ReplyTextFn) => async (
 
   const startIndex = Math.max(1, Math.floor(options?.startIndex ?? 1))
   const rows = items.map((item, offset) => {
-    const duration = item.durationSeconds ? `${Math.floor(item.durationSeconds / 60)}:${String(item.durationSeconds % 60).padStart(2, '0')}` : ''
+    const duration = item.durationSeconds
+      ? `${String(Math.floor(item.durationSeconds / 60)).padStart(2, '0')}:${String(item.durationSeconds % 60).padStart(2, '0')}`
+      : ''
     return {
       index: startIndex + offset,
       title: item.title,
